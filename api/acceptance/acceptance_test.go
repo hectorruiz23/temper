@@ -321,9 +321,9 @@ func randomToken(t *testing.T) string {
 	return hex.EncodeToString(raw)
 }
 
-func migrationChecksum(t *testing.T) string {
+func migrationFileChecksum(t *testing.T, name string) string {
 	t.Helper()
-	return migrationChecksumFor(t, "0001_idempotency.sql")
+	return migrationChecksumFor(t, name)
 }
 
 func migrationChecksumFor(t *testing.T, name string) string {
@@ -520,7 +520,7 @@ func TestRefusesTamperedChecksum(t *testing.T) {
 	if strings.Contains(output, "listening") {
 		t.Fatalf("temper listened despite the tampered checksum:\n%s", failing.output())
 	}
-	for _, fragment := range []string{"migration 1", "checksum", tampered, migrationChecksum(t)} {
+	for _, fragment := range []string{"migration 1", "checksum", tampered, migrationFileChecksum(t, "0001_idempotency.sql")} {
 		if !strings.Contains(output, fragment) {
 			t.Fatalf("output does not contain %q:\n%s", fragment, failing.output())
 		}
