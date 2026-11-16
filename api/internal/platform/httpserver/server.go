@@ -10,28 +10,18 @@ type Server struct {
 	http *http.Server
 }
 
-func New(addr, token string) *Server {
+func New(addr string, handler http.Handler) *Server {
 	return &Server{
 		http: &http.Server{
 			Addr:     addr,
-			Handler:  NewHandler(token),
+			Handler:  handler,
 			ErrorLog: log.Default(),
 		},
 	}
 }
 
 func NewHandler(token string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && r.URL.Path == "/api/health" {
-			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-			return
-		}
-		if !validToken(r, token) {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid token")
-			return
-		}
-		writeError(w, http.StatusNotFound, "not_found", "route not found")
-	})
+	return NewRouter(token)
 }
 
 func (s *Server) Serve(listener net.Listener) error {

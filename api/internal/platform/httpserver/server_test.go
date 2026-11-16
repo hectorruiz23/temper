@@ -133,6 +133,42 @@ func TestWrongMethodWithValidTokenIsNotFound(t *testing.T) {
 	requireError(t, recorder, http.StatusNotFound, "not_found")
 }
 
+func TestRouterMountsAuthenticatedRoutesWithPathValues(t *testing.T) {
+	router := NewRouter(testToken)
+	router.HandleFunc("GET /api/day/{date}", func(w http.ResponseWriter, request *http.Request) {
+		WriteJSON(w, http.StatusOK, map[string]string{"date": request.PathValue("date")})
+	})
+
+	recorder := call(t, router, http.MethodGet, "/api/day/2026-11-16", testToken)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", recorder.Code, recorder.Body.String())
+	}
+	if body := strings.TrimSpace(recorder.Body.String()); body != `{"date":"2026-11-16"}` {
+		t.Fatalf("body = %q, want the path value", body)
+	}
+
+	requireError(t, call(t, router, http.MethodGet, "/api/day/2026-11-16", ""), http.StatusUnauthorized, "unauthorized")
+	requireError(t, call(t, router, http.MethodGet, "/api/day/2026-11-16/", testToken), http.StatusNotFound, "not_found")
+	requireError(t, call(t, router, http.MethodPost, "/api/day/2026-11-16", testToken), http.StatusNotFound, "not_found")
+}
+
+func TestServerAcceptsMountedRouter(t *testing.T) {
+	router := NewRouter(testToken)
+	router.HandleFunc("GET /api/mounted", func(w http.ResponseWriter, request *http.Request) {
+		WriteJSON(w, http.StatusOK, map[string]bool{"mounted": true})
+	})
+
+	server := New("127.0.0.1:0", router)
+	if server.http.Handler != router {
+		t.Fatal("server does not use the mounted router")
+	}
+
+	recorder := call(t, server.http.Handler, http.MethodGet, "/api/mounted", testToken)
+	if recorder.Code != http.StatusOK || strings.TrimSpace(recorder.Body.String()) != `{"mounted":true}` {
+		t.Fatalf("mounted route = %d %q", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestTokenIsNeverEchoed(t *testing.T) {
 	handler := NewHandler(testToken)
 
