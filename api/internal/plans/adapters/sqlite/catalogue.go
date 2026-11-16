@@ -24,7 +24,7 @@ func (s *Store) CreateExercise(ctx context.Context, exercise domain.Exercise) er
 				return err
 			}
 			if count == 0 {
-				return kernel.NewRuleError("invalid_input", fmt.Sprintf("unknown equipment %q", equipment.EquipmentID))
+				return kernel.NewRuleError("unknown_equipment", fmt.Sprintf("unknown equipment %q", equipment.EquipmentID))
 			}
 		}
 

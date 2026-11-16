@@ -1,0 +1,9 @@
+.git
+.gitignore
+*.local.md
+api/build
+api/acceptance
+api/build/
+**/*.db
+**/*.db-wal
+**/*.db-shm

@@ -175,6 +175,9 @@ func TestRepositoryRootHasOnlyAllowedFiles(t *testing.T) {
 		"SELF-HOSTING.md": true,
 		"LICENSE":         true,
 		".gitignore":      true,
+		".dockerignore":   true,
+		"Dockerfile":      true,
+		"compose.yml":     true,
 	}
 
 	entries, err := os.ReadDir(root)
