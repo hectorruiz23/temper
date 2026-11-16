@@ -5,3 +5,8 @@ temper.db
 *.db-shm
 .env
 *.local.md
+android/.gradle/
+android/.kotlin/
+android/**/build/
+local.properties
+*.iml

@@ -16,3 +16,15 @@ jobs:
           cache-dependency-path: api/go.sum
       - run: make -C api verify
       - run: make -C api accept
+  android:
+    name: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest
+        working-directory: android
