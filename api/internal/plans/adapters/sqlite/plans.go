@@ -72,6 +72,18 @@ func (s *Store) Plan(ctx context.Context, id int64) (domain.Plan, error) {
 	return s.loadPlan(ctx, id)
 }
 
+func (s *Store) PlanEffectiveOn(ctx context.Context, date string) (domain.Plan, error) {
+	var id int64
+	err := s.executor(ctx).QueryRowContext(ctx, `SELECT id FROM plan_version WHERE effective_from <= ? ORDER BY effective_from DESC, id DESC LIMIT 1`, date).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Plan{}, kernel.NewRuleError("not_found", fmt.Sprintf("no plan version is effective on %s", date))
+	}
+	if err != nil {
+		return domain.Plan{}, err
+	}
+	return s.loadPlan(ctx, id)
+}
+
 func checkGoal(ctx context.Context, query queryer, goalID string) error {
 	if goalID == "" {
 		return nil

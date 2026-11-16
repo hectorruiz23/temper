@@ -12,6 +12,9 @@ import (
 	healthhttp "github.com/hectorruiz23/temper/api/internal/health/adapters/http"
 	healthsqlite "github.com/hectorruiz23/temper/api/internal/health/adapters/sqlite"
 	healthapp "github.com/hectorruiz23/temper/api/internal/health/app"
+	planshttp "github.com/hectorruiz23/temper/api/internal/plans/adapters/http"
+	planssqlite "github.com/hectorruiz23/temper/api/internal/plans/adapters/sqlite"
+	plansapp "github.com/hectorruiz23/temper/api/internal/plans/app"
 	"github.com/hectorruiz23/temper/api/internal/platform/db"
 	"github.com/hectorruiz23/temper/api/internal/platform/httpserver"
 	"github.com/hectorruiz23/temper/api/migrations"
@@ -53,13 +56,27 @@ func run() error {
 
 	fmt.Printf("listening %s\n", listener.Addr().String())
 
-	store := healthsqlite.New(database)
-	service := healthapp.New(store, systemClock{})
-	handler := healthhttp.New(service)
+	healthStore := healthsqlite.New(database)
+	healthService := healthapp.New(healthStore, systemClock{})
+	healthHandler := healthhttp.New(healthService)
+
+	planStore := planssqlite.New(database)
+	planService := plansapp.NewPlanService(planStore, planStore, systemClock{})
+	catalogueService := plansapp.NewCatalogueService(planStore, systemClock{})
+	planHandler := planshttp.NewPlanHandler(planService)
+	catalogueHandler := planshttp.NewCatalogueHandler(catalogueService)
+	weekHandler := planshttp.NewWeekHandler(planService, healthService)
 
 	router := httpserver.NewRouter(token)
-	router.HandleFunc("POST /api/day", handler.Create)
-	router.HandleFunc("GET /api/day/{date}", handler.Get)
+	router.HandleFunc("POST /api/day", healthHandler.Create)
+	router.HandleFunc("GET /api/day/{date}", healthHandler.Get)
+	router.HandleFunc("POST /api/plans", planHandler.Create)
+	router.HandleFunc("GET /api/plans/current", planHandler.Current)
+	router.HandleFunc("GET /api/plans/{id}", planHandler.Get)
+	router.HandleFunc("GET /api/week/{date}", weekHandler.Get)
+	router.HandleFunc("GET /api/inventory", catalogueHandler.Inventory)
+	router.HandleFunc("GET /api/exercises", catalogueHandler.List)
+	router.HandleFunc("POST /api/exercises", catalogueHandler.Create)
 
 	server := httpserver.New(addr, router)
 	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {

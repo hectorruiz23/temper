@@ -81,6 +81,10 @@ func (s *PlanService) GetPlan(ctx context.Context, id int64) (domain.Plan, error
 	return s.plans.Plan(ctx, id)
 }
 
+func (s *PlanService) PlanEffectiveOn(ctx context.Context, date string) (domain.Plan, error) {
+	return s.plans.PlanEffectiveOn(ctx, date)
+}
+
 func planHash(plan domain.Plan) (string, error) {
 	payload, err := json.Marshal(plan)
 	if err != nil {
