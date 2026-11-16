@@ -319,15 +319,21 @@ func randomToken(t *testing.T) string {
 	return hex.EncodeToString(raw)
 }
 
-func migrationChecksum(t *testing.T) string {
+func migrationFileChecksum(t *testing.T, name string) string {
 	t.Helper()
 
-	contents, err := os.ReadFile(filepath.Join(apiRoot(t), "migrations", "0001_idempotency.sql"))
+	contents, err := os.ReadFile(filepath.Join(apiRoot(t), "migrations", name))
 	if err != nil {
-		t.Fatalf("read migration: %v", err)
+		t.Fatalf("read migration %s: %v", name, err)
 	}
 	sum := sha256.Sum256(contents)
 	return hex.EncodeToString(sum[:])
+}
+
+func migrationChecksum(t *testing.T) string {
+	t.Helper()
+
+	return migrationFileChecksum(t, "0001_idempotency.sql")
 }
 
 func requireListeningLineOnce(t *testing.T, stdout string) {
@@ -389,23 +395,25 @@ func TestEndToEnd(t *testing.T) {
 
 	database := openDatabase(t, dbPath)
 	rows := readMigrations(t, database)
-	if len(rows) != 1 {
-		t.Fatalf("schema_migrations rows = %d, want 1: %+v", len(rows), rows)
+	if len(rows) != 2 {
+		t.Fatalf("schema_migrations rows = %d, want 2: %+v", len(rows), rows)
 	}
-	if rows[0].version != 1 {
-		t.Fatalf("schema_migrations version = %d, want 1", rows[0].version)
+	if rows[0].version != 1 || rows[1].version != 2 {
+		t.Fatalf("schema_migrations versions = [%d %d], want [1 2]", rows[0].version, rows[1].version)
 	}
-	if len(rows[0].checksum) != 64 {
-		t.Fatalf("checksum length = %d, want 64: %q", len(rows[0].checksum), rows[0].checksum)
-	}
-	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(rows[0].checksum) {
-		t.Fatalf("checksum %q is not 64 lowercase hex characters", rows[0].checksum)
-	}
-	if rows[0].checksum != migrationChecksum(t) {
-		t.Fatalf("stored checksum %q does not match the migration bytes", rows[0].checksum)
-	}
-	if rows[0].appliedAt <= 0 {
-		t.Fatalf("applied_at = %d, want a positive timestamp", rows[0].appliedAt)
+	for index, name := range []string{"0001_idempotency.sql", "0002_plans.sql"} {
+		if len(rows[index].checksum) != 64 {
+			t.Fatalf("checksum length = %d, want 64: %q", len(rows[index].checksum), rows[index].checksum)
+		}
+		if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(rows[index].checksum) {
+			t.Fatalf("checksum %q is not 64 lowercase hex characters", rows[index].checksum)
+		}
+		if rows[index].checksum != migrationFileChecksum(t, name) {
+			t.Fatalf("stored checksum %q does not match the bytes of %s", rows[index].checksum, name)
+		}
+		if rows[index].appliedAt <= 0 {
+			t.Fatalf("applied_at = %d, want a positive timestamp", rows[index].appliedAt)
+		}
 	}
 
 	var table string
@@ -413,6 +421,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("idempotency_request table is missing: %v", err)
 	}
 	appliedAt := rows[0].appliedAt
+	secondAppliedAt := rows[1].appliedAt
 	database.Close()
 
 	second := startProcess(t, dbPath, token, "127.0.0.1:0")
@@ -430,14 +439,17 @@ func TestEndToEnd(t *testing.T) {
 
 	database = openDatabase(t, dbPath)
 	rows = readMigrations(t, database)
-	if len(rows) != 1 || rows[0].version != 1 {
-		t.Fatalf("schema_migrations after restart = %+v, want exactly version 1", rows)
+	if len(rows) != 2 || rows[0].version != 1 || rows[1].version != 2 {
+		t.Fatalf("schema_migrations after restart = %+v, want exactly versions 1 and 2", rows)
 	}
-	if rows[0].appliedAt != appliedAt {
-		t.Fatalf("applied_at changed after restart: %d then %d", appliedAt, rows[0].appliedAt)
+	if rows[0].appliedAt != appliedAt || rows[1].appliedAt != secondAppliedAt {
+		t.Fatalf("applied_at changed after restart: %d, %d then %d, %d", appliedAt, secondAppliedAt, rows[0].appliedAt, rows[1].appliedAt)
 	}
-	if rows[0].checksum != migrationChecksum(t) {
-		t.Fatalf("checksum changed after restart: %q", rows[0].checksum)
+	if rows[0].checksum != migrationFileChecksum(t, "0001_idempotency.sql") {
+		t.Fatalf("checksum of version 1 changed after restart: %q", rows[0].checksum)
+	}
+	if rows[1].checksum != migrationFileChecksum(t, "0002_plans.sql") {
+		t.Fatalf("checksum of version 2 changed after restart: %q", rows[1].checksum)
 	}
 	database.Close()
 }
