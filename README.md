@@ -53,6 +53,8 @@ idempotency conflict, `413` body too large, `422` domain rule.
 | `POST` | `/api/sessions` | Create a performed session, with no completion evidence |
 | `POST` | `/api/sessions/{id}/check-in` | Attach exactly one evidence source |
 | `POST` | `/api/sets` | Log a batch of sets atomically |
+| `POST` | `/api/sets/{id}/correct` | Correct one set, keeping the before and after |
+| `GET` | `/api/progression/{exercise_id}` | History, current targets and progression dimensions |
 
 ```sh
 curl http://127.0.0.1:8787/api/health
@@ -99,6 +101,19 @@ curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" \
   --data '{"expected_revision":1,"reported_completed_at":"2026-12-02T09:00:00Z"}' \
   http://127.0.0.1:8787/api/sessions/session-1/check-in
 ```
+
+```sh
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: correct-1" \
+  --data '{"expected_revision":1,"reason":"wrong weight on the bar","changes":{"kg":18}}' \
+  http://127.0.0.1:8787/api/sets/<set-id>/correct
+```
+
+```sh
+curl -H "X-Temper-Token: $TEMPER_TOKEN" http://127.0.0.1:8787/api/progression/goblet-squat
+```
+
+Progression is context, never advice: it returns what was performed, the targets the plan sets and the dimensions the
+exercise can progress on. Nothing in the response tells the caller what to do next.
 
 Creating a session stores no evidence. A session is complete only after a check-in with a link to a present, verified
 watch workout or with the owner's reported completion; the plan never counts as evidence.
