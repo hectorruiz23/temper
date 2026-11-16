@@ -118,6 +118,22 @@ exercise can progress on. Nothing in the response tells the caller what to do ne
 Creating a session stores no evidence. A session is complete only after a check-in with a link to a present, verified
 watch workout or with the owner's reported completion; the plan never counts as evidence.
 
+## MCP
+
+Archi speaks to `POST /mcp` over Streamable HTTP with JSON responses. The route uses the same
+`X-Temper-Token` header; there are no protocol sessions and no SSE stream. Notifications answer `202`, and
+`GET /mcp` answers `405` with `Allow: POST`.
+
+The fourteen tools are `get_inventory`, `list_exercises`, `create_exercise`, `create_plan`,
+`get_current_plan`, `get_plan`, `get_week`, `get_day`, `upsert_day`, `create_session`, `check_in_session`,
+`log_sets`, `correct_set` and `get_progression`. Mutating tools take an `idempotency_key` argument.
+
+```sh
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Content-Type: application/json" \
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_inventory","arguments":{}}}' \
+  http://127.0.0.1:8787/mcp
+```
+
 ## Verify
 
 ```sh
