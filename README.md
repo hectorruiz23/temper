@@ -8,8 +8,7 @@ Plans are written by the owner's assistant agent, Archi, and never by Temper its
 source of truth. It is a Go binary with SQLite as its only store, built to run as one process on a Raspberry Pi.
 
 There is no web interface. The owner's Android app speaks to the HTTP API, and Archi speaks to the MCP endpoint.
-This milestone is the executable skeleton: configuration, SQLite, migrations, the authenticated HTTP server and
-the verification gates.
+The authenticated API covers plans, the exercise catalogue, the scheduled week view and daily health.
 
 ## Build
 
@@ -33,18 +32,57 @@ export TEMPER_DB='temper.db'
 `TEMPER_ADDR` defaults to `127.0.0.1:8787` and `TEMPER_DB` defaults to `temper.db`. With `TEMPER_ADDR=127.0.0.1:0`
 the process prints the bound address as `listening 127.0.0.1:<port>`.
 
-## Call it
+## API
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/health` | Public liveness check |
+| `POST` | `/api/plans` | Create an immutable plan version |
+| `GET` | `/api/plans/current` | Read the latest plan version |
+| `GET` | `/api/plans/{id}` | Read one plan version |
+| `GET` | `/api/week/{date}` | Expand the Monday–Sunday week containing a date |
+| `GET` | `/api/inventory` | Read equipment stock |
+| `GET` | `/api/exercises` | List exercises with an optional `cursor` |
+| `POST` | `/api/exercises` | Add an exercise to the catalogue |
+| `POST` | `/api/day` | Create or update a daily health record |
+| `GET` | `/api/day/{date}` | Read a daily health record |
+
+Health answers `200 {"ok":true}` without a token. Every other route requires `X-Temper-Token`. `POST /api/plans`
+and `POST /api/exercises` also require `Idempotency-Key`. Errors use `{"error":{"code","message"}}`.
 
 ```sh
 curl http://127.0.0.1:8787/api/health
 ```
 
 ```sh
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: plan-2026-12-01" \
+  --data '{"reason":"base block","effective_from":"2026-12-01","timezone":"Europe/Madrid","weekly_frequency":3,"sessions":[{"id":"s1","position":0,"weekday":3,"discipline":"run","target":"easy"}]}' \
+  http://127.0.0.1:8787/api/plans
+```
+
+```sh
 curl -H "X-Temper-Token: $TEMPER_TOKEN" http://127.0.0.1:8787/api/plans/current
 ```
 
-Health answers `200 {"ok":true}` without a token. Every other route requires `X-Temper-Token`; a valid token on a
-route that does not exist yet answers `404` with the standard error body.
+```sh
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: exercise-goblet-squat" \
+  --data '{"name":"Goblet squat","movement_pattern":"squat","unilateral":false,"equipment":[{"equipment_id":"adjustable-dumbbell","quantity":1}]}' \
+  http://127.0.0.1:8787/api/exercises
+```
+
+```sh
+curl -H "X-Temper-Token: $TEMPER_TOKEN" http://127.0.0.1:8787/api/inventory
+```
+
+```sh
+curl -H "X-Temper-Token: $TEMPER_TOKEN" http://127.0.0.1:8787/api/week/2026-12-30
+```
+
+```sh
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: day-2026-12-30" \
+  --data '{"date":"2026-12-30","timezone":"Europe/Madrid","expected_revision":0,"source":"manual","metrics":{"sleep_ms":25200000,"steps":8000,"resting_hr_bpm":52}}' \
+  http://127.0.0.1:8787/api/day
+```
 
 ## Verify
 

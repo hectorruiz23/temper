@@ -17,6 +17,7 @@ type PlanStore interface {
 	CreatePlan(ctx context.Context, plan domain.Plan) (int64, error)
 	CurrentPlan(ctx context.Context) (domain.Plan, error)
 	Plan(ctx context.Context, id int64) (domain.Plan, error)
+	PlanEffectiveOn(ctx context.Context, date string) (domain.Plan, error)
 }
 
 type CatalogueStore interface {
