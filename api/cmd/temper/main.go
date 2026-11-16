@@ -12,6 +12,7 @@ import (
 	healthhttp "github.com/hectorruiz23/temper/api/internal/health/adapters/http"
 	healthsqlite "github.com/hectorruiz23/temper/api/internal/health/adapters/sqlite"
 	healthapp "github.com/hectorruiz23/temper/api/internal/health/app"
+	"github.com/hectorruiz23/temper/api/internal/mcp"
 	planshttp "github.com/hectorruiz23/temper/api/internal/plans/adapters/http"
 	planssqlite "github.com/hectorruiz23/temper/api/internal/plans/adapters/sqlite"
 	plansapp "github.com/hectorruiz23/temper/api/internal/plans/app"
@@ -89,6 +90,12 @@ func run() error {
 	router.HandleFunc("POST /api/sets", trainingHandler.LogSets)
 	router.HandleFunc("POST /api/sets/{id}/correct", trainingHandler.CorrectSet)
 	router.HandleFunc("GET /api/progression/{exercise_id}", trainingHandler.Progression)
+
+	mcpHandler := mcp.New(planService, catalogueService, healthService, trainingService)
+	router.HandleFunc("POST /mcp", mcpHandler.ServeHTTP)
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions} {
+		router.HandleFunc(method+" /mcp", mcpHandler.ServeHTTP)
+	}
 
 	server := httpserver.New(addr, router)
 	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
