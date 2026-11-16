@@ -235,7 +235,7 @@ func statusFor(code string) int {
 		return nethttp.StatusConflict
 	case "invalid_input", "idempotency_key_required":
 		return nethttp.StatusBadRequest
-	case "template_mismatch", "unknown_template", "unusable_watch_evidence", "unknown_exercise":
+	case "template_mismatch", "unknown_template", "unusable_watch_evidence", "unknown_exercise", "equipment_limit":
 		return nethttp.StatusUnprocessableEntity
 	default:
 		return nethttp.StatusInternalServerError

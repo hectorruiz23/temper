@@ -10,6 +10,7 @@ import (
 const (
 	OperationCreateSession = "sessions.create"
 	OperationLogSets       = "sets.log"
+	OperationCorrectSet    = "sets.correct"
 )
 
 type Receipt struct {
@@ -31,6 +32,13 @@ type Transaction interface {
 	Workout(ctx context.Context, id string) (*domain.Workout, error)
 	ExerciseExists(ctx context.Context, id string) (bool, error)
 	InsertSet(ctx context.Context, set domain.Set) error
+	Set(ctx context.Context, id string) (domain.Set, error)
+	UpdateSet(ctx context.Context, set domain.Set, expectedRevision int64) error
+	InsertCorrection(ctx context.Context, correction domain.SetCorrection) error
+	Equipment(ctx context.Context, exerciseID string) ([]domain.EquipmentRequirement, []domain.InventoryStock, error)
+	ExerciseFacts(ctx context.Context, id string) (domain.ExerciseFacts, bool, error)
+	PerformedSets(ctx context.Context, exerciseID string) ([]domain.PerformedSet, error)
+	CurrentTargets(ctx context.Context, exerciseID string) ([]domain.ExerciseTarget, error)
 }
 
 type Clock interface {
