@@ -1,0 +1,29 @@
+services:
+  temper:
+    image: ${TEMPER_IMAGE:-ghcr.io/hectorruiz23/temper:latest}
+    container_name: temper
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      TEMPER_DB: /data/temper.db
+      TEMPER_TOKEN: ${TEMPER_TOKEN:?set TEMPER_TOKEN in the untracked .env}
+      TEMPER_ADDR: 0.0.0.0:8787
+    volumes:
+      - ${TEMPER_DATA:-/srv/temper/data}:/data
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8787/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  watchtower:
+    image: containrrr/watchtower:1.7.1
+    container_name: temper-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --label-enable --cleanup --interval 300

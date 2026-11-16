@@ -1,6 +1,6 @@
 GO ?= go
 
-.PHONY: build verify accept test install-hooks check-github
+.PHONY: build verify accept accept-container test install-hooks check-github
 
 build:
 	@mkdir -p build
@@ -13,6 +13,9 @@ verify:
 
 accept:
 	$(GO) test -count=1 ./acceptance/...
+
+accept-container:
+	$(GO) test -count=1 -tags container ./acceptance/...
 
 test:
 	$(GO) test ./...
