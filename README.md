@@ -8,8 +8,7 @@ Plans are written by the owner's assistant agent, Archi, and never by Temper its
 source of truth. It is a Go binary with SQLite as its only store, built to run as one process on a Raspberry Pi.
 
 There is no web interface. The owner's Android app speaks to the HTTP API, and Archi speaks to the MCP endpoint.
-The authenticated API covers plans, the exercise catalogue, the scheduled week view, performed sessions and daily
-health.
+The authenticated API covers plans, the exercise catalogue, the scheduled week view and daily health.
 
 ## Build
 
@@ -35,30 +34,36 @@ the process prints the bound address as `listening 127.0.0.1:<port>`.
 
 ## API
 
-| Method | Path | Purpose |
+Every route except `GET /api/health` requires `X-Temper-Token`. Every mutation requires `Idempotency-Key`. Errors use
+`{"error":{"code","message"}}`; statuses are `400` malformed, `401` token, `404` missing, `409` revision or
+idempotency conflict, `413` body too large, `422` domain rule.
+
+| Method | Path | What it does |
 |---|---|---|
-| `GET` | `/api/health` | Public liveness check |
+| `GET` | `/api/health` | Liveness, no token |
 | `POST` | `/api/plans` | Create an immutable plan version |
-| `GET` | `/api/plans/current` | Read the latest plan version |
-| `GET` | `/api/plans/{id}` | Read one plan version |
+| `GET` | `/api/plans/current` | Read the version in force |
+| `GET` | `/api/plans/{id}` | Read one version |
 | `GET` | `/api/week/{date}` | Expand the Monday–Sunday week containing a date |
 | `GET` | `/api/inventory` | Read equipment stock |
 | `GET` | `/api/exercises` | List exercises with an optional `cursor` |
 | `POST` | `/api/exercises` | Add an exercise to the catalogue |
 | `POST` | `/api/day` | Create or update a daily health record |
 | `GET` | `/api/day/{date}` | Read a daily health record |
-| `POST` | `/api/sessions` | Create a performed session |
-| `POST` | `/api/sessions/{id}/check-in` | Attach completion evidence to a session |
-| `POST` | `/api/sets` | Log a batch of performed sets |
-| `POST` | `/api/sets/{id}/correct` | Correct one performed set |
-| `GET` | `/api/progression/{exercise_id}` | Read performed history, plan targets and progression dimensions |
-
-Health answers `200 {"ok":true}` without a token. Every other route requires `X-Temper-Token`. `POST /api/plans`,
-`POST /api/exercises`, `POST /api/sessions`, `POST /api/sets` and `POST /api/sets/{id}/correct` also require
-`Idempotency-Key` of at most 128 characters. Errors use `{"error":{"code","message"}}`.
+| `POST` | `/api/sessions` | Create a performed session, with no completion evidence |
+| `POST` | `/api/sessions/{id}/check-in` | Attach exactly one evidence source |
+| `POST` | `/api/sets` | Log a batch of sets atomically |
+| `POST` | `/api/sets/{id}/correct` | Correct one set, keeping the before and after |
+| `GET` | `/api/progression/{exercise_id}` | History, current targets and progression dimensions |
 
 ```sh
 curl http://127.0.0.1:8787/api/health
+```
+
+```sh
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: exercise-goblet-squat" \
+  --data '{"name":"Goblet squat","movement_pattern":"squat","unilateral":false,"equipment":[{"equipment_id":"adjustable-dumbbell","quantity":1}]}' \
+  http://127.0.0.1:8787/api/exercises
 ```
 
 ```sh
@@ -69,19 +74,7 @@ curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: plan-2026-1
 
 ```sh
 curl -H "X-Temper-Token: $TEMPER_TOKEN" http://127.0.0.1:8787/api/plans/current
-```
-
-```sh
-curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: exercise-goblet-squat" \
-  --data '{"name":"Goblet squat","movement_pattern":"squat","unilateral":false,"equipment":[{"equipment_id":"adjustable-dumbbell","quantity":1}]}' \
-  http://127.0.0.1:8787/api/exercises
-```
-
-```sh
 curl -H "X-Temper-Token: $TEMPER_TOKEN" http://127.0.0.1:8787/api/inventory
-```
-
-```sh
 curl -H "X-Temper-Token: $TEMPER_TOKEN" http://127.0.0.1:8787/api/week/2026-12-30
 ```
 
@@ -92,37 +85,26 @@ curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: day-2026-12
 ```
 
 ```sh
-curl -X POST \
-  -H "X-Temper-Token: $TEMPER_TOKEN" \
-  -H "Idempotency-Key: create-session-1" \
-  -H "Content-Type: application/json" \
-  -d '{"id":"session-1","template_id":"<template-id>","date":"2026-12-02","discipline":"strength","started_at":"2026-12-02T08:00:00Z"}' \
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: create-session-1" \
+  --data '{"id":"session-1","template_id":"s1","date":"2026-12-02","discipline":"strength","started_at":"2026-12-02T08:00:00Z"}' \
   http://127.0.0.1:8787/api/sessions
 ```
 
 ```sh
-curl -X POST \
-  -H "X-Temper-Token: $TEMPER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"expected_revision":1,"reported_completed_at":"2026-12-02T09:00:00Z"}' \
-  http://127.0.0.1:8787/api/sessions/session-1/check-in
-```
-
-```sh
-curl -X POST \
-  -H "X-Temper-Token: $TEMPER_TOKEN" \
-  -H "Idempotency-Key: sets-1" \
-  -H "Content-Type: application/json" \
-  -d '{"session_id":"session-1","sets":[{"exercise_id":"goblet-squat","set_index":1,"kg":20,"reps":10}]}' \
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: sets-1" \
+  --data '{"session_id":"session-1","sets":[{"exercise_id":"goblet-squat","set_index":1,"kg":20,"reps":10}]}' \
   http://127.0.0.1:8787/api/sets
 ```
 
 ```sh
-curl -X POST \
-  -H "X-Temper-Token: $TEMPER_TOKEN" \
-  -H "Idempotency-Key: correct-set-1" \
-  -H "Content-Type: application/json" \
-  -d '{"expected_revision":1,"reason":"logged the wrong reps","changes":{"reps":12,"note":"stronger"}}' \
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" \
+  --data '{"expected_revision":1,"reported_completed_at":"2026-12-02T09:00:00Z"}' \
+  http://127.0.0.1:8787/api/sessions/session-1/check-in
+```
+
+```sh
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: correct-1" \
+  --data '{"expected_revision":1,"reason":"wrong weight on the bar","changes":{"kg":18}}' \
   http://127.0.0.1:8787/api/sets/<set-id>/correct
 ```
 
@@ -130,19 +112,11 @@ curl -X POST \
 curl -H "X-Temper-Token: $TEMPER_TOKEN" http://127.0.0.1:8787/api/progression/goblet-squat
 ```
 
-Creating a session stores no evidence. It is complete only after a check-in with a link to a present, verified watch
-workout or with the owner's reported completion.
+Progression is context, never advice: it returns what was performed, the targets the plan sets and the dimensions the
+exercise can progress on. Nothing in the response tells the caller what to do next.
 
-A correction is a fact of its own: it is inserted, never an update in place, and the affected set carries the
-corrected values with an incremented `revision` afterwards. Every validation that applies to a new set applies to
-the corrected values: `kg >= 0`, `reps > 0`, `set_index > 0`, the unique position within the session and exercise,
-the exercise must exist, and `kg` must stay within the inventory maximum for the equipment the exercise requires.
-`before_json` and `after_json` record the row before and after as canonical JSON with sorted keys. Replaying the
-same `Idempotency-Key` returns the stored result without a second correction.
-
-The progression route returns the logged sets for an exercise, the targets the plan version in force sets for it,
-and the dimensions on which the exercise can progress. It is data about the exercise, never a prescription or a
-recommendation.
+Creating a session stores no evidence. A session is complete only after a check-in with a link to a present, verified
+watch workout or with the owner's reported completion; the plan never counts as evidence.
 
 ## Verify
 
