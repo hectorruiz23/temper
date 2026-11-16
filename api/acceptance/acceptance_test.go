@@ -14,6 +14,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -321,6 +323,11 @@ func randomToken(t *testing.T) string {
 
 func migrationFileChecksum(t *testing.T, name string) string {
 	t.Helper()
+	return migrationChecksumFor(t, name)
+}
+
+func migrationChecksumFor(t *testing.T, name string) string {
+	t.Helper()
 
 	contents, err := os.ReadFile(filepath.Join(apiRoot(t), "migrations", name))
 	if err != nil {
@@ -330,10 +337,37 @@ func migrationFileChecksum(t *testing.T, name string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func migrationChecksum(t *testing.T) string {
+func appliedMigrationFiles(t *testing.T) []string {
 	t.Helper()
 
-	return migrationFileChecksum(t, "0001_idempotency.sql")
+	entries, err := os.ReadDir(filepath.Join(apiRoot(t), "migrations"))
+	if err != nil {
+		t.Fatalf("read migrations directory: %v", err)
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+	return names
+}
+
+func migrationVersion(t *testing.T, name string) int {
+	t.Helper()
+
+	prefix, _, ok := strings.Cut(name, "_")
+	if !ok {
+		t.Fatalf("migration %s has no version prefix", name)
+	}
+	version, err := strconv.Atoi(prefix)
+	if err != nil {
+		t.Fatalf("migration %s has invalid version prefix %q: %v", name, prefix, err)
+	}
+	return version
 }
 
 func requireListeningLineOnce(t *testing.T, stdout string) {
@@ -395,33 +429,38 @@ func TestEndToEnd(t *testing.T) {
 
 	database := openDatabase(t, dbPath)
 	rows := readMigrations(t, database)
-	if len(rows) != 2 {
-		t.Fatalf("schema_migrations rows = %d, want 2: %+v", len(rows), rows)
+	migrationFiles := appliedMigrationFiles(t)
+	if len(rows) != len(migrationFiles) {
+		t.Fatalf("schema_migrations = %+v, want one row per migration file %v", rows, migrationFiles)
 	}
-	if rows[0].version != 1 || rows[1].version != 2 {
-		t.Fatalf("schema_migrations versions = [%d %d], want [1 2]", rows[0].version, rows[1].version)
-	}
-	for index, name := range []string{"0001_idempotency.sql", "0002_plans.sql"} {
+	for index, name := range migrationFiles {
+		if rows[index].version != migrationVersion(t, name) {
+			t.Fatalf("schema_migrations[%d] version = %d, want %d from %s", index, rows[index].version, migrationVersion(t, name), name)
+		}
 		if len(rows[index].checksum) != 64 {
-			t.Fatalf("checksum length = %d, want 64: %q", len(rows[index].checksum), rows[index].checksum)
+			t.Fatalf("checksum length for version %d = %d, want 64: %q", rows[index].version, len(rows[index].checksum), rows[index].checksum)
 		}
 		if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(rows[index].checksum) {
 			t.Fatalf("checksum %q is not 64 lowercase hex characters", rows[index].checksum)
 		}
-		if rows[index].checksum != migrationFileChecksum(t, name) {
+		if rows[index].checksum != migrationChecksumFor(t, name) {
 			t.Fatalf("stored checksum %q does not match the bytes of %s", rows[index].checksum, name)
 		}
 		if rows[index].appliedAt <= 0 {
-			t.Fatalf("applied_at = %d, want a positive timestamp", rows[index].appliedAt)
+			t.Fatalf("applied_at for version %d = %d, want a positive timestamp", rows[index].version, rows[index].appliedAt)
 		}
 	}
 
-	var table string
-	if err := database.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'idempotency_request'`).Scan(&table); err != nil {
-		t.Fatalf("idempotency_request table is missing: %v", err)
+	for _, name := range []string{"idempotency_request", "day", "day_sleep_stage", "day_workout"} {
+		var table string
+		if err := database.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, name).Scan(&table); err != nil {
+			t.Fatalf("%s table is missing: %v", name, err)
+		}
 	}
-	appliedAt := rows[0].appliedAt
-	secondAppliedAt := rows[1].appliedAt
+	appliedAt := make([]int64, len(rows))
+	for index, row := range rows {
+		appliedAt[index] = row.appliedAt
+	}
 	database.Close()
 
 	second := startProcess(t, dbPath, token, "127.0.0.1:0")
@@ -439,17 +478,19 @@ func TestEndToEnd(t *testing.T) {
 
 	database = openDatabase(t, dbPath)
 	rows = readMigrations(t, database)
-	if len(rows) != 2 || rows[0].version != 1 || rows[1].version != 2 {
-		t.Fatalf("schema_migrations after restart = %+v, want exactly versions 1 and 2", rows)
+	if len(rows) != len(migrationFiles) {
+		t.Fatalf("schema_migrations after restart = %+v, want one row per migration file %v", rows, migrationFiles)
 	}
-	if rows[0].appliedAt != appliedAt || rows[1].appliedAt != secondAppliedAt {
-		t.Fatalf("applied_at changed after restart: %d, %d then %d, %d", appliedAt, secondAppliedAt, rows[0].appliedAt, rows[1].appliedAt)
-	}
-	if rows[0].checksum != migrationFileChecksum(t, "0001_idempotency.sql") {
-		t.Fatalf("checksum of version 1 changed after restart: %q", rows[0].checksum)
-	}
-	if rows[1].checksum != migrationFileChecksum(t, "0002_plans.sql") {
-		t.Fatalf("checksum of version 2 changed after restart: %q", rows[1].checksum)
+	for index, name := range migrationFiles {
+		if rows[index].version != migrationVersion(t, name) {
+			t.Fatalf("schema_migrations[%d] version after restart = %d, want %d", index, rows[index].version, migrationVersion(t, name))
+		}
+		if rows[index].appliedAt != appliedAt[index] {
+			t.Fatalf("applied_at for version %d changed after restart: %d then %d", rows[index].version, appliedAt[index], rows[index].appliedAt)
+		}
+		if rows[index].checksum != migrationChecksumFor(t, name) {
+			t.Fatalf("checksum for version %d changed after restart: %q", rows[index].version, rows[index].checksum)
+		}
 	}
 	database.Close()
 }
@@ -479,7 +520,7 @@ func TestRefusesTamperedChecksum(t *testing.T) {
 	if strings.Contains(output, "listening") {
 		t.Fatalf("temper listened despite the tampered checksum:\n%s", failing.output())
 	}
-	for _, fragment := range []string{"migration 1", "checksum", tampered, migrationChecksum(t)} {
+	for _, fragment := range []string{"migration 1", "checksum", tampered, migrationFileChecksum(t, "0001_idempotency.sql")} {
 		if !strings.Contains(output, fragment) {
 			t.Fatalf("output does not contain %q:\n%s", fragment, failing.output())
 		}
