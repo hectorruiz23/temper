@@ -34,24 +34,34 @@ the process prints the bound address as `listening 127.0.0.1:<port>`.
 
 ## API
 
-| Method | Path | Purpose |
+Every route except `GET /api/health` requires `X-Temper-Token`. Every mutation requires `Idempotency-Key`. Errors use
+`{"error":{"code","message"}}`; statuses are `400` malformed, `401` token, `404` missing, `409` revision or
+idempotency conflict, `413` body too large, `422` domain rule.
+
+| Method | Path | What it does |
 |---|---|---|
-| `GET` | `/api/health` | Public liveness check |
+| `GET` | `/api/health` | Liveness, no token |
 | `POST` | `/api/plans` | Create an immutable plan version |
-| `GET` | `/api/plans/current` | Read the latest plan version |
-| `GET` | `/api/plans/{id}` | Read one plan version |
+| `GET` | `/api/plans/current` | Read the version in force |
+| `GET` | `/api/plans/{id}` | Read one version |
 | `GET` | `/api/week/{date}` | Expand the Monday–Sunday week containing a date |
 | `GET` | `/api/inventory` | Read equipment stock |
 | `GET` | `/api/exercises` | List exercises with an optional `cursor` |
 | `POST` | `/api/exercises` | Add an exercise to the catalogue |
 | `POST` | `/api/day` | Create or update a daily health record |
 | `GET` | `/api/day/{date}` | Read a daily health record |
-
-Health answers `200 {"ok":true}` without a token. Every other route requires `X-Temper-Token`. `POST /api/plans`
-and `POST /api/exercises` also require `Idempotency-Key`. Errors use `{"error":{"code","message"}}`.
+| `POST` | `/api/sessions` | Create a performed session, with no completion evidence |
+| `POST` | `/api/sessions/{id}/check-in` | Attach exactly one evidence source |
+| `POST` | `/api/sets` | Log a batch of sets atomically |
 
 ```sh
 curl http://127.0.0.1:8787/api/health
+```
+
+```sh
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: exercise-goblet-squat" \
+  --data '{"name":"Goblet squat","movement_pattern":"squat","unilateral":false,"equipment":[{"equipment_id":"adjustable-dumbbell","quantity":1}]}' \
+  http://127.0.0.1:8787/api/exercises
 ```
 
 ```sh
@@ -62,51 +72,7 @@ curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: plan-2026-1
 
 ```sh
 curl -H "X-Temper-Token: $TEMPER_TOKEN" http://127.0.0.1:8787/api/plans/current
-```
-
-```sh
-<<<<<<< HEAD
-curl -X POST \
-  -H "X-Temper-Token: $TEMPER_TOKEN" \
-  -H "Idempotency-Key: create-session-1" \
-  -H "Content-Type: application/json" \
-  -d '{"id":"session-1","template_id":"<template-id>","date":"2026-12-02","discipline":"strength","started_at":"2026-12-02T08:00:00Z"}' \
-  http://127.0.0.1:8787/api/sessions
-```
-
-```sh
-curl -X POST \
-  -H "X-Temper-Token: $TEMPER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"expected_revision":1,"reported_completed_at":"2026-12-02T09:00:00Z"}' \
-  http://127.0.0.1:8787/api/sessions/session-1/check-in
-```
-
-```sh
-curl -X POST \
-  -H "X-Temper-Token: $TEMPER_TOKEN" \
-  -H "Idempotency-Key: sets-1" \
-  -H "Content-Type: application/json" \
-  -d '{"session_id":"session-1","sets":[{"exercise_id":"goblet-squat","set_index":1,"kg":20,"reps":10}]}' \
-  http://127.0.0.1:8787/api/sets
-```
-
-Creating a session stores no evidence. It is complete only after a check-in with a link to a present, verified watch
-workout or with the owner's reported completion.
-
-Health answers `200 {"ok":true}` without a token. Every other route requires `X-Temper-Token`; a valid token on a
-route that does not exist yet answers `404` with the standard error body.
-=======
-curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: exercise-goblet-squat" \
-  --data '{"name":"Goblet squat","movement_pattern":"squat","unilateral":false,"equipment":[{"equipment_id":"adjustable-dumbbell","quantity":1}]}' \
-  http://127.0.0.1:8787/api/exercises
-```
-
-```sh
 curl -H "X-Temper-Token: $TEMPER_TOKEN" http://127.0.0.1:8787/api/inventory
-```
-
-```sh
 curl -H "X-Temper-Token: $TEMPER_TOKEN" http://127.0.0.1:8787/api/week/2026-12-30
 ```
 
@@ -115,7 +81,27 @@ curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: day-2026-12
   --data '{"date":"2026-12-30","timezone":"Europe/Madrid","expected_revision":0,"source":"manual","metrics":{"sleep_ms":25200000,"steps":8000,"resting_hr_bpm":52}}' \
   http://127.0.0.1:8787/api/day
 ```
->>>>>>> origin/main
+
+```sh
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: create-session-1" \
+  --data '{"id":"session-1","template_id":"s1","date":"2026-12-02","discipline":"strength","started_at":"2026-12-02T08:00:00Z"}' \
+  http://127.0.0.1:8787/api/sessions
+```
+
+```sh
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" -H "Idempotency-Key: sets-1" \
+  --data '{"session_id":"session-1","sets":[{"exercise_id":"goblet-squat","set_index":1,"kg":20,"reps":10}]}' \
+  http://127.0.0.1:8787/api/sets
+```
+
+```sh
+curl -X POST -H "X-Temper-Token: $TEMPER_TOKEN" \
+  --data '{"expected_revision":1,"reported_completed_at":"2026-12-02T09:00:00Z"}' \
+  http://127.0.0.1:8787/api/sessions/session-1/check-in
+```
+
+Creating a session stores no evidence. A session is complete only after a check-in with a link to a present, verified
+watch workout or with the owner's reported completion; the plan never counts as evidence.
 
 ## Verify
 
