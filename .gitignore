@@ -1,0 +1,7 @@
+api/build/
+temper.db
+*.db
+*.db-wal
+*.db-shm
+.env
+*.local.md

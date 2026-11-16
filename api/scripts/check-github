@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v gh >/dev/null 2>&1; then
+	echo "check-github: gh is not installed" >&2
+	exit 1
+fi
+
+if ! gh auth status >/dev/null 2>&1; then
+	echo "check-github: gh is not authenticated; run gh auth login" >&2
+	exit 1
+fi
+
+failures=0
+
+fail() {
+	echo "mismatch: $*" >&2
+	failures=$((failures + 1))
+}
+
+expect() {
+	local name="$1"
+	local expected="$2"
+	local actual="$3"
+	if [[ "$actual" != "$expected" ]]; then
+		fail "$name is $actual, expected $expected"
+	fi
+}
+
+settings="$(gh api repos/{owner}/{repo} --jq '[.private, .allow_auto_merge, .allow_squash_merge, .allow_merge_commit, .allow_rebase_merge, .delete_branch_on_merge] | @tsv')"
+IFS=$'\t' read -r private auto_merge squash_merge merge_commit rebase_merge delete_branch <<<"$settings"
+
+expect "repository public (private)" "false" "$private"
+expect "allow_auto_merge" "true" "$auto_merge"
+expect "allow_squash_merge" "true" "$squash_merge"
+expect "allow_merge_commit" "false" "$merge_commit"
+expect "allow_rebase_merge" "false" "$rebase_merge"
+expect "delete_branch_on_merge" "true" "$delete_branch"
+
+protection="repos/{owner}/{repo}/branches/main/protection"
+
+strict="$(gh api "$protection" --jq '.required_status_checks.strict' 2>/dev/null || true)"
+contexts="$(gh api "$protection" --jq '.required_status_checks.contexts[]?' 2>/dev/null || true)"
+enforce_admins="$(gh api "$protection" --jq '.enforce_admins.enabled' 2>/dev/null || true)"
+force_pushes="$(gh api "$protection" --jq '.allow_force_pushes.enabled' 2>/dev/null || true)"
+deletions="$(gh api "$protection" --jq '.allow_deletions.enabled' 2>/dev/null || true)"
+linear_history="$(gh api "$protection" --jq '.required_linear_history.enabled' 2>/dev/null || true)"
+
+expect "main required_status_checks.strict" "true" "$strict"
+if ! grep -qxF "api" <<<"$contexts"; then
+	fail "main required status context api is missing (contexts: ${contexts:-none})"
+fi
+expect "main enforce_admins.enabled" "true" "$enforce_admins"
+expect "main allow_force_pushes.enabled" "false" "$force_pushes"
+expect "main allow_deletions.enabled" "false" "$deletions"
+expect "main required_linear_history.enabled" "true" "$linear_history"
+
+if ((failures > 0)); then
+	echo "check-github: $failures mismatch(es)" >&2
+	exit 1
+fi
+
+echo "check-github: repository settings and main branch protection match the contract"
