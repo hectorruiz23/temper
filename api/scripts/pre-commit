@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+branch="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+
+case "$branch" in
+	main|master)
+		echo "refusing to commit on $branch; create a branch and use a pull request" >&2
+		exit 1
+		;;
+esac
+
+exit 0
