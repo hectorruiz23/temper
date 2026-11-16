@@ -14,6 +14,9 @@ import (
 	healthapp "github.com/hectorruiz23/temper/api/internal/health/app"
 	"github.com/hectorruiz23/temper/api/internal/platform/db"
 	"github.com/hectorruiz23/temper/api/internal/platform/httpserver"
+	traininghttp "github.com/hectorruiz23/temper/api/internal/training/adapters/http"
+	trainingsqlite "github.com/hectorruiz23/temper/api/internal/training/adapters/sqlite"
+	trainingapp "github.com/hectorruiz23/temper/api/internal/training/app"
 	"github.com/hectorruiz23/temper/api/migrations"
 )
 
@@ -57,9 +60,16 @@ func run() error {
 	service := healthapp.New(store, systemClock{})
 	handler := healthhttp.New(service)
 
+	trainingStore := trainingsqlite.New(database)
+	trainingService := trainingapp.New(trainingStore, systemClock{})
+	trainingHandler := traininghttp.New(trainingService)
+
 	router := httpserver.NewRouter(token)
 	router.HandleFunc("POST /api/day", handler.Create)
 	router.HandleFunc("GET /api/day/{date}", handler.Get)
+	router.HandleFunc("POST /api/sessions", trainingHandler.CreateSession)
+	router.HandleFunc("POST /api/sessions/{id}/check-in", trainingHandler.CheckIn)
+	router.HandleFunc("POST /api/sets", trainingHandler.LogSets)
 
 	server := httpserver.New(addr, router)
 	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {

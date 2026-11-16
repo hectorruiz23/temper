@@ -43,6 +43,35 @@ curl http://127.0.0.1:8787/api/health
 curl -H "X-Temper-Token: $TEMPER_TOKEN" http://127.0.0.1:8787/api/plans/current
 ```
 
+```sh
+curl -X POST \
+  -H "X-Temper-Token: $TEMPER_TOKEN" \
+  -H "Idempotency-Key: create-session-1" \
+  -H "Content-Type: application/json" \
+  -d '{"id":"session-1","template_id":"<template-id>","date":"2026-12-02","discipline":"strength","started_at":"2026-12-02T08:00:00Z"}' \
+  http://127.0.0.1:8787/api/sessions
+```
+
+```sh
+curl -X POST \
+  -H "X-Temper-Token: $TEMPER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"expected_revision":1,"reported_completed_at":"2026-12-02T09:00:00Z"}' \
+  http://127.0.0.1:8787/api/sessions/session-1/check-in
+```
+
+```sh
+curl -X POST \
+  -H "X-Temper-Token: $TEMPER_TOKEN" \
+  -H "Idempotency-Key: sets-1" \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"session-1","sets":[{"exercise_id":"goblet-squat","set_index":1,"kg":20,"reps":10}]}' \
+  http://127.0.0.1:8787/api/sets
+```
+
+Creating a session stores no evidence. It is complete only after a check-in with a link to a present, verified watch
+workout or with the owner's reported completion.
+
 Health answers `200 {"ok":true}` without a token. Every other route requires `X-Temper-Token`; a valid token on a
 route that does not exist yet answers `404` with the standard error body.
 
