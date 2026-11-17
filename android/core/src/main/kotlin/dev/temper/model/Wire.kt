@@ -226,3 +226,78 @@ data class ApiErrorDetail(
     val code: String = "",
     val message: String = "",
 )
+
+@Serializable
+data class HealthDayEnvelope(
+    val day: HealthDay,
+)
+
+@Serializable
+data class HealthDay(
+    val date: String = "",
+    val timezone: String = "",
+    val revision: Long = 0,
+    @SerialName("sleep_ms") val sleepMs: Long? = null,
+    val steps: Long? = null,
+    @SerialName("resting_hr_bpm") val restingHrBpm: Long? = null,
+    @SerialName("hrv_rmssd_ms") val hrvRmssdMs: Double? = null,
+    @SerialName("updated_at") val updatedAt: Long = 0,
+    @SerialName("last_source") val lastSource: String = "",
+    @SerialName("sleep_stages") val sleepStages: List<HealthSleepStage> = emptyList(),
+    val workouts: List<HealthWorkoutWire> = emptyList(),
+)
+
+@Serializable
+data class HealthSleepStage(
+    val stage: String = "",
+    @SerialName("duration_ms") val durationMs: Long = 0,
+)
+
+@Serializable
+data class HealthWorkoutWire(
+    val id: String = "",
+    val origin: String = "",
+    @SerialName("external_id") val externalId: String = "",
+    @SerialName("device_kind") val deviceKind: String? = null,
+    @SerialName("started_at") val startedAt: Long = 0,
+    @SerialName("ended_at") val endedAt: Long = 0,
+    val discipline: String = "",
+    @SerialName("duration_ms") val durationMs: Long = 0,
+    @SerialName("distance_m") val distanceM: Double? = null,
+    @SerialName("watch_verified") val watchVerified: Boolean = false,
+)
+
+@Serializable
+data class DayUploadRequest(
+    val date: String,
+    val timezone: String,
+    @SerialName("expected_revision") val expectedRevision: Long,
+    val source: String,
+    val metrics: DayMetrics? = null,
+    @SerialName("sleep_stages") val sleepStages: List<HealthSleepStage>? = null,
+    val workouts: List<DayWorkout>? = null,
+)
+
+@Serializable
+data class DayMetrics(
+    @SerialName("sleep_ms") val sleepMs: Long? = null,
+    val steps: Long? = null,
+    @SerialName("resting_hr_bpm") val restingHrBpm: Long? = null,
+    @SerialName("hrv_rmssd_ms") val hrvRmssdMs: Double? = null,
+) {
+    val isEmpty: Boolean
+        get() = sleepMs == null && steps == null && restingHrBpm == null && hrvRmssdMs == null
+}
+
+@Serializable
+data class DayWorkout(
+    val origin: String,
+    @SerialName("external_id") val externalId: String,
+    @SerialName("device_kind") val deviceKind: String? = null,
+    @SerialName("started_at") val startedAt: Long,
+    @SerialName("ended_at") val endedAt: Long,
+    val discipline: String,
+    @SerialName("duration_ms") val durationMs: Long,
+    @SerialName("distance_m") val distanceM: Double? = null,
+    @SerialName("watch_verified") val watchVerified: Boolean,
+)

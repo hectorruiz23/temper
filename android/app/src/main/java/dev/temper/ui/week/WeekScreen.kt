@@ -45,6 +45,7 @@ import dev.temper.ui.components.TemperTopBar
 import dev.temper.ui.components.TopBarAction
 import dev.temper.ui.dayLabel
 import dev.temper.ui.formatSleep
+import dev.temper.ui.health.HealthSyncBlock
 import dev.temper.ui.parseDate
 import dev.temper.ui.theme.Card
 import dev.temper.ui.theme.DataFont
@@ -131,6 +132,7 @@ fun WeekScreen(
                 onAction = if (current.retryable) viewModel::load else onOpenSettings,
             )
             is WeekUiState.Content -> WeekContent(
+                container = container,
                 week = current.week,
                 today = current.today,
                 onOpenSession = onOpenSession,
@@ -141,6 +143,7 @@ fun WeekScreen(
 
 @Composable
 private fun WeekContent(
+    container: AppContainer,
     week: WeekResponse,
     today: LocalDate,
     onOpenSession: (String, String) -> Unit,
@@ -173,6 +176,8 @@ private fun WeekContent(
         item {
             Spacer(modifier = Modifier.height(8.dp))
             HealthBlock(day = healthToday, today = today)
+            Spacer(modifier = Modifier.height(8.dp))
+            HealthSyncBlock(container)
         }
     }
 }
