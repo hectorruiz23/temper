@@ -32,6 +32,7 @@ import dev.temper.ui.components.SyncStrip
 import dev.temper.ui.components.TemperScaffold
 import dev.temper.ui.components.TemperTextField
 import dev.temper.ui.components.TemperTopBar
+import dev.temper.ui.health.HealthSyncBlock
 import dev.temper.ui.theme.Ink
 import dev.temper.ui.theme.Panel
 import dev.temper.ui.TemperSimpleFactory
@@ -160,6 +161,8 @@ fun SettingsScreen(
                 style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
                 color = Panel,
             )
+
+            HealthSyncBlock(container)
 
             if (state.hasStoredToken) {
                 Spacer(modifier = Modifier.height(8.dp))
