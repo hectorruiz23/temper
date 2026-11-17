@@ -87,6 +87,7 @@ func run() error {
 	router.HandleFunc("POST /api/exercises", catalogueHandler.Create)
 	router.HandleFunc("POST /api/sessions", trainingHandler.CreateSession)
 	router.HandleFunc("POST /api/sessions/{id}/check-in", trainingHandler.CheckIn)
+	router.HandleFunc("DELETE /api/sessions/{id}", trainingHandler.Discard)
 	router.HandleFunc("POST /api/sets", trainingHandler.LogSets)
 	router.HandleFunc("POST /api/sets/{id}/correct", trainingHandler.CorrectSet)
 	router.HandleFunc("GET /api/progression/{exercise_id}", trainingHandler.Progression)
