@@ -315,6 +315,29 @@ func TestMCPFullCycleOverTheRealBinary(t *testing.T) {
 		t.Fatalf("check in = %+v", checkInResult)
 	}
 
+	weekAfter := mcpToolCall(t, baseURL, token, 11, "get_week", map[string]any{"date": "2026-12-02"})
+	var weekAfterResult struct {
+		Performed []struct {
+			ID       string `json:"id"`
+			Complete bool   `json:"complete"`
+			Evidence *struct {
+				Source string `json:"source"`
+			} `json:"evidence"`
+		} `json:"performed"`
+		Planned []struct {
+			TemplateID string `json:"template_id"`
+		} `json:"planned"`
+	}
+	mcpStructured(t, weekAfter, &weekAfterResult)
+	if len(weekAfterResult.Performed) != 1 || weekAfterResult.Performed[0].ID != "session-a" ||
+		!weekAfterResult.Performed[0].Complete || weekAfterResult.Performed[0].Evidence == nil ||
+		weekAfterResult.Performed[0].Evidence.Source != "reported" {
+		t.Fatalf("week performed = %+v", weekAfterResult.Performed)
+	}
+	if len(weekAfterResult.Planned) == 0 {
+		t.Fatalf("week planned went empty: %+v", weekAfterResult)
+	}
+
 	progression := mcpToolCall(t, baseURL, token, 10, "get_progression", map[string]any{"exercise_id": "goblet-squat"})
 	var progressionResult struct {
 		PerformedHistory []struct {

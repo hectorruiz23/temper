@@ -22,6 +22,9 @@ import (
 	"github.com/hectorruiz23/temper/api/internal/plans/domain"
 	platformdb "github.com/hectorruiz23/temper/api/internal/platform/db"
 	"github.com/hectorruiz23/temper/api/internal/platform/httpserver"
+	trainingsqlite "github.com/hectorruiz23/temper/api/internal/training/adapters/sqlite"
+	trainingapp "github.com/hectorruiz23/temper/api/internal/training/app"
+	trainingdomain "github.com/hectorruiz23/temper/api/internal/training/domain"
 	"github.com/hectorruiz23/temper/api/migrations"
 )
 
@@ -41,6 +44,7 @@ type testFixture struct {
 	plans     *app.PlanService
 	catalogue *app.CatalogueService
 	health    *healthapp.Service
+	training  *trainingapp.Service
 	clock     fixedClock
 }
 
@@ -60,19 +64,21 @@ func newTestFixture(t *testing.T) *testFixture {
 	clock := fixedClock{at: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)}
 	planStore := planssqlite.New(database)
 	healthStore := healthsqlite.New(database)
+	trainingStore := trainingsqlite.New(database)
 
 	fixture := &testFixture{
 		database:  database,
 		plans:     app.NewPlanService(planStore, planStore, clock),
 		catalogue: app.NewCatalogueService(planStore, clock),
 		health:    healthapp.New(healthStore, clock),
+		training:  trainingapp.New(trainingStore, clock),
 		clock:     clock,
 	}
 
 	router := httpserver.NewRouter(handlerToken)
 	planHandler := NewPlanHandler(fixture.plans)
 	catalogueHandler := NewCatalogueHandler(fixture.catalogue)
-	weekHandler := NewWeekHandler(fixture.plans, fixture.health)
+	weekHandler := NewWeekHandler(fixture.plans, fixture.health, fixture.training)
 
 	router.HandleFunc("POST /api/plans", planHandler.Create)
 	router.HandleFunc("GET /api/plans/current", planHandler.Current)
@@ -524,6 +530,139 @@ func TestWeekRoutes(t *testing.T) {
 	requireError(t, callHandler(t, fixture.handler, "GET", "/api/week/2026-02-30", handlerToken, "", ""), 400, "invalid_input")
 	requireError(t, callHandler(t, fixture.handler, "GET", "/api/week/not-a-date", handlerToken, "", ""), 400, "invalid_input")
 	requireError(t, callHandler(t, fixture.handler, "GET", "/api/week/2026-10-25", "", "", ""), 401, "unauthorized")
+}
+
+func TestWeekPerformedSessions(t *testing.T) {
+	fixture := newTestFixture(t)
+
+	if _, err := fixture.plans.CreatePlan(context.Background(), app.CreatePlanCommand{
+		IdempotencyKey: "performed-plan",
+		Plan: domain.Plan{
+			Reason:          "performed block",
+			EffectiveFrom:   "2026-10-01",
+			Timezone:        "UTC",
+			WeeklyFrequency: 2,
+			Sessions: []domain.Session{
+				{ID: "s1", Position: 0, ScheduledDate: stringPointer("2026-10-21"), Discipline: domain.DisciplineStrength, Target: "full body"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("create performed plan: %v", err)
+	}
+
+	templateID := "s1"
+	reported := time.Date(2026, 10, 21, 10, 0, 0, 0, time.UTC).UnixMilli()
+	completedStarted := time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC).UnixMilli()
+	completed, err := fixture.training.CreateSession(context.Background(), trainingapp.CreateSessionCommand{
+		IdempotencyKey: "performed-completed",
+		ID:             "session-completed",
+		TemplateID:     &templateID,
+		Date:           "2026-10-21",
+		Discipline:     trainingdomain.DisciplineStrength,
+		StartedAt:      &completedStarted,
+	})
+	if err != nil {
+		t.Fatalf("create completed session: %v", err)
+	}
+	if _, err := fixture.training.CheckIn(context.Background(), trainingapp.CheckInCommand{
+		SessionID:           completed.ID,
+		ExpectedRevision:    1,
+		ReportedCompletedAt: &reported,
+	}); err != nil {
+		t.Fatalf("check in completed session: %v", err)
+	}
+
+	incompleteStarted := time.Date(2026, 10, 21, 8, 0, 0, 0, time.UTC).UnixMilli()
+	if _, err := fixture.training.CreateSession(context.Background(), trainingapp.CreateSessionCommand{
+		IdempotencyKey: "performed-incomplete",
+		ID:             "session-incomplete",
+		TemplateID:     &templateID,
+		Date:           "2026-10-21",
+		Discipline:     trainingdomain.DisciplineStrength,
+		StartedAt:      &incompleteStarted,
+	}); err != nil {
+		t.Fatalf("create incomplete session: %v", err)
+	}
+
+	recorder := callHandler(t, fixture.handler, "GET", "/api/week/2026-10-21", handlerToken, "", "")
+	if recorder.Code != 200 {
+		t.Fatalf("week status = %d; body = %s", recorder.Code, recorder.Body.String())
+	}
+	var week weekResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &week); err != nil {
+		t.Fatalf("decode week: %v", err)
+	}
+	if len(week.Performed) != 2 {
+		t.Fatalf("performed = %+v, want 2 entries", week.Performed)
+	}
+
+	incomplete := week.Performed[0]
+	if incomplete.ID != "session-incomplete" || incomplete.Date != "2026-10-21" || incomplete.StartedAt == nil || *incomplete.StartedAt != "2026-10-21T08:00:00Z" {
+		t.Fatalf("first performed entry = %+v", incomplete)
+	}
+	if incomplete.TemplateID == nil || *incomplete.TemplateID != templateID || incomplete.Discipline != trainingdomain.DisciplineStrength {
+		t.Fatalf("first performed metadata = %+v", incomplete)
+	}
+	if incomplete.Revision != 1 || incomplete.Complete || incomplete.Evidence != nil {
+		t.Fatalf("first performed completion = %+v", incomplete)
+	}
+
+	complete := week.Performed[1]
+	if complete.ID != "session-completed" || complete.Date != "2026-10-21" || complete.StartedAt == nil || *complete.StartedAt != "2026-10-21T09:00:00Z" {
+		t.Fatalf("second performed entry = %+v", complete)
+	}
+	if complete.Revision != 2 || !complete.Complete {
+		t.Fatalf("second performed completion = %+v", complete)
+	}
+	if complete.Evidence == nil || complete.Evidence.Source != trainingdomain.EvidenceReported || complete.Evidence.ReportedCompletedAt == nil || *complete.Evidence.ReportedCompletedAt != "2026-10-21T10:00:00Z" {
+		t.Fatalf("second performed evidence = %+v", complete.Evidence)
+	}
+	if complete.Evidence.WorkoutID != nil {
+		t.Fatalf("reported evidence carries workout id: %+v", complete.Evidence)
+	}
+
+	if len(week.Planned) != 1 || week.Planned[0].TemplateID != templateID || week.Planned[0].Date != "2026-10-21" {
+		t.Fatalf("planned = %+v", week.Planned)
+	}
+	if !strings.Contains(recorder.Body.String(), `"evidence":null`) {
+		t.Fatalf("incomplete session does not carry null evidence: %s", recorder.Body.String())
+	}
+}
+
+func TestWeekPerformedExcludesSessionsOutsideTheWeek(t *testing.T) {
+	fixture := newTestFixture(t)
+
+	for _, test := range []struct {
+		id   string
+		date string
+	}{
+		{id: "sunday-before", date: "2026-10-18"},
+		{id: "monday-after", date: "2026-10-26"},
+	} {
+		if _, err := fixture.training.CreateSession(context.Background(), trainingapp.CreateSessionCommand{
+			IdempotencyKey: "outside-" + test.id,
+			ID:             test.id,
+			Date:           test.date,
+			Discipline:     trainingdomain.DisciplineRun,
+		}); err != nil {
+			t.Fatalf("create session %s: %v", test.id, err)
+		}
+	}
+
+	recorder := callHandler(t, fixture.handler, "GET", "/api/week/2026-10-25", handlerToken, "", "")
+	if recorder.Code != 200 {
+		t.Fatalf("week status = %d; body = %s", recorder.Code, recorder.Body.String())
+	}
+	var week weekResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &week); err != nil {
+		t.Fatalf("decode week: %v", err)
+	}
+	if week.Performed == nil || len(week.Performed) != 0 {
+		t.Fatalf("performed = %+v, want an empty array", week.Performed)
+	}
+	if !strings.Contains(recorder.Body.String(), `"performed":[]`) {
+		t.Fatalf("performed is not an empty array: %s", recorder.Body.String())
+	}
 }
 
 func TestWeekYearBoundary(t *testing.T) {
