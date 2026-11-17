@@ -61,6 +61,9 @@ class TemperApi {
     suspend fun currentPlan(endpoint: String, token: String): ReadOutcome<PlanEnvelope> =
         read(endpoint, "/api/plans/current", token)
 
+    suspend fun plan(endpoint: String, token: String, id: Long): ReadOutcome<PlanEnvelope> =
+        read(endpoint, "/api/plans/$id", token)
+
     suspend fun exercises(endpoint: String, token: String): ReadOutcome<ExerciseListResponse> =
         read(endpoint, "/api/exercises", token)
 
