@@ -18,4 +18,9 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onStart() {
+        super.onStart()
+        (application as TemperApplication).container.healthSync.syncOnForeground()
+    }
 }

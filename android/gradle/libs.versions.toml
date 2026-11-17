@@ -7,6 +7,7 @@ navigationCompose = "2.9.8"
 lifecycleViewmodelCompose = "2.10.0"
 coreKtx = "1.18.0"
 datastorePreferences = "1.3.0"
+healthConnect = "1.1.0"
 ktor = "3.6.1"
 coroutines = "1.11.0"
 serializationJson = "1.13.0"
@@ -19,6 +20,7 @@ androidx-activity-compose = { module = "androidx.activity:activity-compose", ver
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycleViewmodelCompose" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastorePreferences" }
+androidx-health-connect-client = { module = "androidx.health.connect:connect-client", version.ref = "healthConnect" }
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
 androidx-compose-ui = { module = "androidx.compose.ui:ui" }
 androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }

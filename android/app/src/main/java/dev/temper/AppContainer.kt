@@ -4,6 +4,8 @@ import android.content.Context
 import dev.temper.api.TemperApi
 import dev.temper.config.ConfigStore
 import dev.temper.config.StoredConfig
+import dev.temper.health.HealthConnectReader
+import dev.temper.health.HealthSyncController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,6 +24,14 @@ class AppContainer(context: Context) {
         runBlocking(Dispatchers.IO) { configStore.read() },
     )
     val configuration: StateFlow<StoredConfig?> = mutableConfiguration.asStateFlow()
+
+    val healthSync = HealthSyncController(
+        api = api,
+        reader = HealthConnectReader(appContext),
+        configStore = configStore,
+        configuration = configuration,
+        scope = scope,
+    )
 
     suspend fun saveConfiguration(endpoint: String, token: String) {
         configStore.save(endpoint, token)

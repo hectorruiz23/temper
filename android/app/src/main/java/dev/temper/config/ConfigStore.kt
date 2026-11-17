@@ -17,6 +17,7 @@ class ConfigStore(private val context: Context) {
     private val endpointKey = stringPreferencesKey("endpoint")
     private val tokenCiphertextKey = stringPreferencesKey("token_ciphertext")
     private val tokenKeyAlias = stringPreferencesKey("token_key_alias")
+    private val healthPermissionsKey = stringPreferencesKey("health_permissions_granted")
 
     suspend fun read(): StoredConfig? {
         val preferences = runCatching { context.temperDataStore.data.first() }.getOrNull() ?: return null
@@ -44,5 +45,21 @@ class ConfigStore(private val context: Context) {
     suspend fun clear() {
         context.temperDataStore.edit { values -> values.clear() }
         TokenCipher.delete()
+    }
+
+    suspend fun readGrantedHealthPermissions(): Set<String> {
+        val preferences = runCatching { context.temperDataStore.data.first() }.getOrNull() ?: return emptySet()
+        return preferences[healthPermissionsKey]
+            ?.split(",")
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.toSet()
+            ?: emptySet()
+    }
+
+    suspend fun saveGrantedHealthPermissions(permissions: Set<String>) {
+        context.temperDataStore.edit { values ->
+            values[healthPermissionsKey] = permissions.sorted().joinToString(",")
+        }
     }
 }

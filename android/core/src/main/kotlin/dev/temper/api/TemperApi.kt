@@ -3,6 +3,7 @@ package dev.temper.api
 import dev.temper.model.ApiErrorEnvelope
 import dev.temper.model.CheckInEnvelope
 import dev.temper.model.ExerciseListResponse
+import dev.temper.model.HealthDayEnvelope
 import dev.temper.model.HealthResponse
 import dev.temper.model.PlanEnvelope
 import dev.temper.model.SessionEnvelope
@@ -62,6 +63,12 @@ class TemperApi {
 
     suspend fun exercises(endpoint: String, token: String): ReadOutcome<ExerciseListResponse> =
         read(endpoint, "/api/exercises", token)
+
+    suspend fun day(endpoint: String, token: String, date: String): ReadOutcome<HealthDayEnvelope> =
+        read(endpoint, "/api/day/$date", token)
+
+    suspend fun uploadDay(endpoint: String, token: String, key: String, body: String): SendOutcome =
+        send(endpoint, token, "/api/day", key, body)
 
     suspend fun createSession(endpoint: String, token: String, key: String, body: String): SendOutcome =
         send(endpoint, token, "/api/sessions", key, body)
