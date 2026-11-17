@@ -70,6 +70,44 @@ func (t *transaction) Session(ctx context.Context, id string) (domain.Session, e
 	return session, nil
 }
 
+func (s *Store) SessionsBetween(ctx context.Context, startDate, endDate string) ([]domain.Session, error) {
+	rows, err := s.database.QueryContext(ctx, `SELECT ts.id, ts.template_id, ts.date, ts.discipline, ts.started_at, ts.reported_completed_at, ts.watch_workout_id, ts.created_at, ts.revision, COALESCE(dw.present, 0)
+		FROM training_session ts
+		LEFT JOIN day_workout dw ON dw.id = ts.watch_workout_id
+		WHERE ts.date >= ? AND ts.date <= ?
+		ORDER BY ts.date, ts.started_at, ts.id`, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sessions := make([]domain.Session, 0)
+	for rows.Next() {
+		var (
+			session    domain.Session
+			templateID sql.NullString
+			startedAt  sql.NullInt64
+			reportedAt sql.NullInt64
+			watchID    sql.NullString
+			present    int
+		)
+		if err := rows.Scan(&session.ID, &templateID, &session.Date, &session.Discipline, &startedAt, &reportedAt, &watchID, &session.CreatedAt, &session.Revision, &present); err != nil {
+			return nil, err
+		}
+
+		session.TemplateID = nullableStringValue(templateID)
+		session.StartedAt = nullableInt64Value(startedAt)
+		session.ReportedCompletedAt = nullableInt64Value(reportedAt)
+		session.WatchWorkoutID = nullableStringValue(watchID)
+		session.Complete = domain.IsComplete(session.WatchWorkoutID, present == 1, session.ReportedCompletedAt)
+		sessions = append(sessions, session)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
 func (t *transaction) UpdateSessionEvidence(ctx context.Context, id string, expectedRevision, nextRevision int64, watchWorkoutID *string, reportedCompletedAt *int64) error {
 	result, err := t.query.ExecContext(ctx, `UPDATE training_session
 		SET watch_workout_id = ?, reported_completed_at = ?, revision = ?
