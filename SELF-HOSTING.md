@@ -65,7 +65,10 @@ Start the service:
 docker compose up -d
 ```
 
-The bundled compose file publishes Temper on `127.0.0.1:8787` and runs a Watchtower service. The
+The bundled compose file publishes Temper on `127.0.0.1:${TEMPER_PORT:-8787}`; set `TEMPER_PORT` when something
+else already holds 8787 on the host. It also defines a Watchtower service behind the `watchtower` profile, which
+`docker compose up -d` does **not** start: if the host already runs Watchtower, that one is enough and the profile is
+never enabled; if it does not, start it explicitly with `docker compose --profile watchtower up -d`. The
 `com.centurylinklabs.watchtower.enable: "true"` label on the Temper container makes Watchtower update it
 automatically: every 300 seconds Watchtower checks the configured image, and when a newer image is available it
 pulls it and recreates the container. Set `TEMPER_IMAGE` to the tag that the image workflow publishes, or to the
@@ -73,7 +76,7 @@ tag you built and loaded yourself.
 
 ## Reverse proxy
 
-Temper speaks plain HTTP on `127.0.0.1:<port>`; with the bundled compose file this is `127.0.0.1:8787`. The
+Temper speaks plain HTTP on `127.0.0.1:<port>`; with the bundled compose file this is `127.0.0.1:${TEMPER_PORT:-8787}`. The
 proxy terminates TLS and forwards the `X-Temper-Token` header unchanged; it must not log that header.
 
 Caddy example:
