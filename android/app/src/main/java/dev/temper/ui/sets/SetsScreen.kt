@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -63,6 +64,11 @@ fun SetsScreen(
     )
     val state by viewModel.state.collectAsState()
     val write by viewModel.writeState.collectAsState()
+    val discard by viewModel.discardState.collectAsState()
+
+    LaunchedEffect(discard) {
+        if (discard is WriteState.Saved) onBack()
+    }
     val content = state as? SetsUiState.Content
     val parsedDate = parseDate(date)
 
@@ -75,27 +81,29 @@ fun SetsScreen(
             )
         },
         rail = {
-            when {
-                write is WriteState.Saved -> {
+            when (val current = write) {
+                is WriteState.Saved -> {
                     RailHint("Saved on the server", "batch echoed")
                     PrimaryButton(text = "Continue to result", onClick = onContinue)
                 }
-                write is WriteState.Sending -> {
+                is WriteState.Sending -> {
                     RailHint("Sending the batch", "inputs locked")
                     PrimaryButton(text = "Saving…", onClick = {}, enabled = false)
                 }
-                write is WriteState.Retryable || write is WriteState.UnknownOutcome -> {
+                is WriteState.Retryable, is WriteState.UnknownOutcome -> {
                     RailHint("Not saved", "retry uses the same key")
                     PrimaryButton(text = "Retry", onClick = viewModel::retry)
                 }
-                write is WriteState.Rejected -> {
-                    RailHint("Rejected by the server", null)
+                is WriteState.Rejected -> {
+                    RailHint("Rejected by the server", current.code)
                     PrimaryButton(text = "Save sets", onClick = viewModel::submit)
                     QuietButton(text = "Open Settings", onClick = onOpenSettings)
+                    DiscardAction(discard, viewModel::discard)
                 }
                 else -> {
                     RailHint("${content?.rows?.size ?: 0} sets · one batch", "server truth only")
                     PrimaryButton(text = "Save sets", onClick = viewModel::submit, enabled = content != null)
+                    DiscardAction(discard, viewModel::discard)
                 }
             }
         },
@@ -254,4 +262,25 @@ private fun WriteStrip(write: WriteState<SetsEnvelope>) {
         else -> Unit
     }
     Spacer(modifier = Modifier.height(4.dp))
+}
+
+@Composable
+private fun DiscardAction(state: WriteState<Unit>, onDiscard: () -> Unit) {
+    when (state) {
+        is WriteState.Sending -> PrimaryButton(text = "Discarding…", onClick = {}, enabled = false)
+        is WriteState.Rejected -> {
+            RailHint("Not discarded", state.code ?: state.message)
+            QuietButton(text = "Discard this session", onClick = onDiscard)
+        }
+        is WriteState.Retryable -> {
+            RailHint("Not discarded", state.reason)
+            QuietButton(text = "Discard this session", onClick = onDiscard)
+        }
+        is WriteState.UnknownOutcome -> {
+            RailHint("Not discarded", state.reason)
+            QuietButton(text = "Discard this session", onClick = onDiscard)
+        }
+        is WriteState.Saved -> Unit
+        else -> QuietButton(text = "Discard this session", onClick = onDiscard)
+    }
 }
