@@ -441,17 +441,35 @@ func (h *Handler) upsertDay(ctx context.Context, raw json.RawMessage) (toolResul
 	if args.Workouts != nil {
 		workouts := make([]healthdomain.Workout, len(*args.Workouts))
 		for index, workout := range *args.Workouts {
+			splits := make([]healthdomain.WorkoutSplit, len(workout.Splits))
+			for splitIndex, split := range workout.Splits {
+				splits[splitIndex] = healthdomain.WorkoutSplit{
+					Position:     split.Position,
+					Kind:         split.Kind,
+					DistanceM:    split.DistanceM,
+					DurationMS:   split.DurationMS,
+					AvgHRBPM:     split.AvgHRBPM,
+					PaceSecPerKM: split.PaceSecPerKM,
+				}
+			}
 			workouts[index] = healthdomain.Workout{
-				Origin:        workout.Origin,
-				ExternalID:    workout.ExternalID,
-				DeviceKind:    workout.DeviceKind,
-				StartedAt:     workout.StartedAt,
-				EndedAt:       workout.EndedAt,
-				Discipline:    workout.Discipline,
-				DurationMS:    workout.DurationMS,
-				DistanceM:     workout.DistanceM,
-				WatchVerified: workout.WatchVerified,
-				Present:       true,
+				Origin:         workout.Origin,
+				ExternalID:     workout.ExternalID,
+				DeviceKind:     workout.DeviceKind,
+				StartedAt:      workout.StartedAt,
+				EndedAt:        workout.EndedAt,
+				Discipline:     workout.Discipline,
+				DurationMS:     workout.DurationMS,
+				DistanceM:      workout.DistanceM,
+				AvgHRBPM:       workout.AvgHRBPM,
+				MaxHRBPM:       workout.MaxHRBPM,
+				CaloriesKcal:   workout.CaloriesKcal,
+				CadenceSPM:     workout.CadenceSPM,
+				ElevationGainM: workout.ElevationGainM,
+				PaceSecPerKM:   workout.PaceSecPerKM,
+				WatchVerified:  workout.WatchVerified,
+				Present:        true,
+				Splits:         splits,
 			}
 		}
 		command.Workouts = &workouts
@@ -757,15 +775,29 @@ func planSessionSchema() map[string]any {
 
 func workoutSchema() map[string]any {
 	return objectSchema(map[string]any{
-		"origin":         stringSchema("Workout origin."),
-		"external_id":    stringSchema("External workout id."),
-		"device_kind":    stringSchema("Optional device kind."),
-		"started_at":     integerSchema("Start time in milliseconds since epoch."),
-		"ended_at":       integerSchema("End time in milliseconds since epoch."),
-		"discipline":     stringSchema("Workout discipline."),
-		"duration_ms":    integerSchema("Duration in milliseconds."),
-		"distance_m":     numberSchema("Optional distance in metres."),
-		"watch_verified": booleanSchema("Whether the watch verified the workout."),
+		"origin":           stringSchema("Workout origin."),
+		"external_id":      stringSchema("External workout id."),
+		"device_kind":      stringSchema("Optional device kind."),
+		"started_at":       integerSchema("Start time in milliseconds since epoch."),
+		"ended_at":         integerSchema("End time in milliseconds since epoch."),
+		"discipline":       stringSchema("Workout discipline."),
+		"duration_ms":      integerSchema("Duration in milliseconds."),
+		"distance_m":       numberSchema("Optional distance in metres."),
+		"avg_hr_bpm":       integerSchema("Optional average heart rate."),
+		"max_hr_bpm":       integerSchema("Optional maximum heart rate."),
+		"calories_kcal":    numberSchema("Optional energy expenditure in kilocalories."),
+		"cadence_spm":      numberSchema("Optional cadence in steps or revolutions per minute."),
+		"elevation_gain_m": numberSchema("Optional elevation gain in metres."),
+		"pace_sec_per_km":  numberSchema("Optional pace. The server derives it from duration_ms and distance_m when it is missing."),
+		"watch_verified":   booleanSchema("Whether the watch verified the workout."),
+		"splits": arraySchema("Optional partial laps or kilometres.", objectSchema(map[string]any{
+			"position":        integerSchema("Zero-based split position."),
+			"kind":            stringSchema("Optional split kind, such as km or lap."),
+			"distance_m":      numberSchema("Optional split distance in metres."),
+			"duration_ms":     integerSchema("Optional split duration in milliseconds."),
+			"avg_hr_bpm":      integerSchema("Optional split average heart rate."),
+			"pace_sec_per_km": numberSchema("Optional split pace. The server derives it from the split duration and distance when it is missing."),
+		}, "position")),
 	}, "origin", "external_id", "discipline")
 }
 
