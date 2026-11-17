@@ -10,22 +10,31 @@ import (
 	"github.com/hectorruiz23/temper/api/internal/training/domain"
 )
 
-func (t *transaction) Template(ctx context.Context, id string) (string, bool, error) {
-	var discipline sql.NullString
-	err := t.query.QueryRowContext(ctx, `SELECT discipline FROM session_template WHERE id = ?`, id).Scan(&discipline)
+func (t *transaction) Template(ctx context.Context, id, date string) (string, int64, bool, error) {
+	var (
+		discipline sql.NullString
+		planID     int64
+	)
+	err := t.query.QueryRowContext(ctx, `SELECT st.discipline, st.plan_version_id
+		FROM session_template st
+		JOIN plan_version pv ON pv.id = st.plan_version_id
+		WHERE st.id = ? AND pv.effective_from <= ?
+		ORDER BY pv.effective_from DESC, pv.id DESC
+		LIMIT 1`, id, date).Scan(&discipline, &planID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", false, nil
+		return "", 0, false, nil
 	}
 	if err != nil {
-		return "", false, err
+		return "", 0, false, err
 	}
-	return discipline.String, true, nil
+	return discipline.String, planID, true, nil
 }
 
 func (t *transaction) CreateSession(ctx context.Context, session domain.Session) error {
-	_, err := t.query.ExecContext(ctx, `INSERT INTO training_session (id, template_id, date, discipline, started_at, reported_completed_at, watch_workout_id, created_at, revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := t.query.ExecContext(ctx, `INSERT INTO training_session (id, plan_version_id, template_id, date, discipline, started_at, reported_completed_at, watch_workout_id, created_at, revision)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		session.ID,
+		nullableInt64(session.PlanVersionID),
 		nullableString(session.TemplateID),
 		session.Date,
 		session.Discipline,
@@ -43,18 +52,19 @@ func (t *transaction) CreateSession(ctx context.Context, session domain.Session)
 
 func (t *transaction) Session(ctx context.Context, id string) (domain.Session, error) {
 	var (
-		session    domain.Session
-		templateID sql.NullString
-		startedAt  sql.NullInt64
-		reportedAt sql.NullInt64
-		watchID    sql.NullString
-		present    int
+		session     domain.Session
+		templateID  sql.NullString
+		startedAt   sql.NullInt64
+		reportedAt  sql.NullInt64
+		watchID     sql.NullString
+		present     int
+		planVersion sql.NullInt64
 	)
-	err := t.query.QueryRowContext(ctx, `SELECT ts.id, ts.template_id, ts.date, ts.discipline, ts.started_at, ts.reported_completed_at, ts.watch_workout_id, ts.created_at, ts.revision, COALESCE(dw.present, 0)
+	err := t.query.QueryRowContext(ctx, `SELECT ts.id, ts.template_id, ts.date, ts.discipline, ts.started_at, ts.reported_completed_at, ts.watch_workout_id, ts.created_at, ts.revision, COALESCE(dw.present, 0), ts.plan_version_id
 		FROM training_session ts
 		LEFT JOIN day_workout dw ON dw.id = ts.watch_workout_id
 		WHERE ts.id = ?`, id).
-		Scan(&session.ID, &templateID, &session.Date, &session.Discipline, &startedAt, &reportedAt, &watchID, &session.CreatedAt, &session.Revision, &present)
+		Scan(&session.ID, &templateID, &session.Date, &session.Discipline, &startedAt, &reportedAt, &watchID, &session.CreatedAt, &session.Revision, &present, &planVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Session{}, kernel.NewRuleError("not_found", "session not found")
 	}
@@ -62,6 +72,7 @@ func (t *transaction) Session(ctx context.Context, id string) (domain.Session, e
 		return domain.Session{}, err
 	}
 
+	session.PlanVersionID = nullableInt64Value(planVersion)
 	session.TemplateID = nullableStringValue(templateID)
 	session.StartedAt = nullableInt64Value(startedAt)
 	session.ReportedCompletedAt = nullableInt64Value(reportedAt)
@@ -71,7 +82,7 @@ func (t *transaction) Session(ctx context.Context, id string) (domain.Session, e
 }
 
 func (s *Store) SessionsBetween(ctx context.Context, startDate, endDate string) ([]domain.Session, error) {
-	rows, err := s.database.QueryContext(ctx, `SELECT ts.id, ts.template_id, ts.date, ts.discipline, ts.started_at, ts.reported_completed_at, ts.watch_workout_id, ts.created_at, ts.revision, COALESCE(dw.present, 0)
+	rows, err := s.database.QueryContext(ctx, `SELECT ts.id, ts.template_id, ts.date, ts.discipline, ts.started_at, ts.reported_completed_at, ts.watch_workout_id, ts.created_at, ts.revision, COALESCE(dw.present, 0), ts.plan_version_id
 		FROM training_session ts
 		LEFT JOIN day_workout dw ON dw.id = ts.watch_workout_id
 		WHERE ts.date >= ? AND ts.date <= ?
@@ -84,17 +95,19 @@ func (s *Store) SessionsBetween(ctx context.Context, startDate, endDate string) 
 	sessions := make([]domain.Session, 0)
 	for rows.Next() {
 		var (
-			session    domain.Session
-			templateID sql.NullString
-			startedAt  sql.NullInt64
-			reportedAt sql.NullInt64
-			watchID    sql.NullString
-			present    int
+			session     domain.Session
+			templateID  sql.NullString
+			startedAt   sql.NullInt64
+			reportedAt  sql.NullInt64
+			watchID     sql.NullString
+			present     int
+			planVersion sql.NullInt64
 		)
-		if err := rows.Scan(&session.ID, &templateID, &session.Date, &session.Discipline, &startedAt, &reportedAt, &watchID, &session.CreatedAt, &session.Revision, &present); err != nil {
+		if err := rows.Scan(&session.ID, &templateID, &session.Date, &session.Discipline, &startedAt, &reportedAt, &watchID, &session.CreatedAt, &session.Revision, &present, &planVersion); err != nil {
 			return nil, err
 		}
 
+		session.PlanVersionID = nullableInt64Value(planVersion)
 		session.TemplateID = nullableStringValue(templateID)
 		session.StartedAt = nullableInt64Value(startedAt)
 		session.ReportedCompletedAt = nullableInt64Value(reportedAt)
@@ -106,6 +119,29 @@ func (s *Store) SessionsBetween(ctx context.Context, startDate, endDate string) 
 		return nil, err
 	}
 	return sessions, nil
+}
+
+func (t *transaction) SetCount(ctx context.Context, sessionID string) (int, error) {
+	var count int
+	if err := t.query.QueryRowContext(ctx, `SELECT COUNT(*) FROM logged_set WHERE session_id = ?`, sessionID).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (t *transaction) DeleteSession(ctx context.Context, id string) error {
+	result, err := t.query.ExecContext(ctx, `DELETE FROM training_session WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return kernel.NewRuleError("not_found", "session not found")
+	}
+	return nil
 }
 
 func (t *transaction) UpdateSessionEvidence(ctx context.Context, id string, expectedRevision, nextRevision int64, watchWorkoutID *string, reportedCompletedAt *int64) error {

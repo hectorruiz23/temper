@@ -73,17 +73,35 @@ func (h *Handler) Create(w nethttp.ResponseWriter, request *nethttp.Request) {
 	if decoded.Workouts != nil {
 		workouts := make([]domain.Workout, len(*decoded.Workouts))
 		for index, workout := range *decoded.Workouts {
+			splits := make([]domain.WorkoutSplit, len(workout.Splits))
+			for splitIndex, split := range workout.Splits {
+				splits[splitIndex] = domain.WorkoutSplit{
+					Position:     split.Position,
+					Kind:         split.Kind,
+					DistanceM:    split.DistanceM,
+					DurationMS:   split.DurationMS,
+					AvgHRBPM:     split.AvgHRBPM,
+					PaceSecPerKM: split.PaceSecPerKM,
+				}
+			}
 			workouts[index] = domain.Workout{
-				Origin:        workout.Origin,
-				ExternalID:    workout.ExternalID,
-				DeviceKind:    workout.DeviceKind,
-				StartedAt:     workout.StartedAt,
-				EndedAt:       workout.EndedAt,
-				Discipline:    workout.Discipline,
-				DurationMS:    workout.DurationMS,
-				DistanceM:     workout.DistanceM,
-				WatchVerified: workout.WatchVerified,
-				Present:       true,
+				Origin:         workout.Origin,
+				ExternalID:     workout.ExternalID,
+				DeviceKind:     workout.DeviceKind,
+				StartedAt:      workout.StartedAt,
+				EndedAt:        workout.EndedAt,
+				Discipline:     workout.Discipline,
+				DurationMS:     workout.DurationMS,
+				DistanceM:      workout.DistanceM,
+				AvgHRBPM:       workout.AvgHRBPM,
+				MaxHRBPM:       workout.MaxHRBPM,
+				CaloriesKcal:   workout.CaloriesKcal,
+				CadenceSPM:     workout.CadenceSPM,
+				ElevationGainM: workout.ElevationGainM,
+				PaceSecPerKM:   workout.PaceSecPerKM,
+				WatchVerified:  workout.WatchVerified,
+				Present:        true,
+				Splits:         splits,
 			}
 		}
 		command.Workouts = &workouts
@@ -216,15 +234,31 @@ type stageRequest struct {
 }
 
 type workoutRequest struct {
-	Origin        string   `json:"origin"`
-	ExternalID    string   `json:"external_id"`
-	DeviceKind    *string  `json:"device_kind"`
-	StartedAt     int64    `json:"started_at"`
-	EndedAt       int64    `json:"ended_at"`
-	Discipline    string   `json:"discipline"`
-	DurationMS    int64    `json:"duration_ms"`
-	DistanceM     *float64 `json:"distance_m"`
-	WatchVerified bool     `json:"watch_verified"`
+	Origin         string         `json:"origin"`
+	ExternalID     string         `json:"external_id"`
+	DeviceKind     *string        `json:"device_kind"`
+	StartedAt      int64          `json:"started_at"`
+	EndedAt        int64          `json:"ended_at"`
+	Discipline     string         `json:"discipline"`
+	DurationMS     int64          `json:"duration_ms"`
+	DistanceM      *float64       `json:"distance_m"`
+	AvgHRBPM       *int64         `json:"avg_hr_bpm"`
+	MaxHRBPM       *int64         `json:"max_hr_bpm"`
+	CaloriesKcal   *float64       `json:"calories_kcal"`
+	CadenceSPM     *float64       `json:"cadence_spm"`
+	ElevationGainM *float64       `json:"elevation_gain_m"`
+	PaceSecPerKM   *float64       `json:"pace_sec_per_km"`
+	WatchVerified  bool           `json:"watch_verified"`
+	Splits         []splitRequest `json:"splits"`
+}
+
+type splitRequest struct {
+	Position     int      `json:"position"`
+	Kind         *string  `json:"kind"`
+	DistanceM    *float64 `json:"distance_m"`
+	DurationMS   *int64   `json:"duration_ms"`
+	AvgHRBPM     *int64   `json:"avg_hr_bpm"`
+	PaceSecPerKM *float64 `json:"pace_sec_per_km"`
 }
 
 type dayEnvelope struct {
@@ -251,16 +285,32 @@ type stageResponse struct {
 }
 
 type workoutResponse struct {
-	ID            string   `json:"id"`
-	Origin        string   `json:"origin"`
-	ExternalID    string   `json:"external_id"`
-	DeviceKind    *string  `json:"device_kind"`
-	StartedAt     int64    `json:"started_at"`
-	EndedAt       int64    `json:"ended_at"`
-	Discipline    string   `json:"discipline"`
-	DurationMS    int64    `json:"duration_ms"`
-	DistanceM     *float64 `json:"distance_m"`
-	WatchVerified bool     `json:"watch_verified"`
+	ID             string          `json:"id"`
+	Origin         string          `json:"origin"`
+	ExternalID     string          `json:"external_id"`
+	DeviceKind     *string         `json:"device_kind"`
+	StartedAt      int64           `json:"started_at"`
+	EndedAt        int64           `json:"ended_at"`
+	Discipline     string          `json:"discipline"`
+	DurationMS     int64           `json:"duration_ms"`
+	DistanceM      *float64        `json:"distance_m"`
+	AvgHRBPM       *int64          `json:"avg_hr_bpm"`
+	MaxHRBPM       *int64          `json:"max_hr_bpm"`
+	CaloriesKcal   *float64        `json:"calories_kcal"`
+	CadenceSPM     *float64        `json:"cadence_spm"`
+	ElevationGainM *float64        `json:"elevation_gain_m"`
+	PaceSecPerKM   *float64        `json:"pace_sec_per_km"`
+	WatchVerified  bool            `json:"watch_verified"`
+	Splits         []splitResponse `json:"splits"`
+}
+
+type splitResponse struct {
+	Position     int      `json:"position"`
+	Kind         *string  `json:"kind"`
+	DistanceM    *float64 `json:"distance_m"`
+	DurationMS   *int64   `json:"duration_ms"`
+	AvgHRBPM     *int64   `json:"avg_hr_bpm"`
+	PaceSecPerKM *float64 `json:"pace_sec_per_km"`
 }
 
 func dayResponseFrom(day domain.Day) dayResponse {
@@ -274,17 +324,35 @@ func dayResponseFrom(day domain.Day) dayResponse {
 		if !workout.Present {
 			continue
 		}
+		splits := make([]splitResponse, 0, len(workout.Splits))
+		for _, split := range workout.Splits {
+			splits = append(splits, splitResponse{
+				Position:     split.Position,
+				Kind:         split.Kind,
+				DistanceM:    split.DistanceM,
+				DurationMS:   split.DurationMS,
+				AvgHRBPM:     split.AvgHRBPM,
+				PaceSecPerKM: split.PaceSecPerKM,
+			})
+		}
 		workouts = append(workouts, workoutResponse{
-			ID:            workout.ID,
-			Origin:        workout.Origin,
-			ExternalID:    workout.ExternalID,
-			DeviceKind:    workout.DeviceKind,
-			StartedAt:     workout.StartedAt,
-			EndedAt:       workout.EndedAt,
-			Discipline:    workout.Discipline,
-			DurationMS:    workout.DurationMS,
-			DistanceM:     workout.DistanceM,
-			WatchVerified: workout.WatchVerified,
+			ID:             workout.ID,
+			Origin:         workout.Origin,
+			ExternalID:     workout.ExternalID,
+			DeviceKind:     workout.DeviceKind,
+			StartedAt:      workout.StartedAt,
+			EndedAt:        workout.EndedAt,
+			Discipline:     workout.Discipline,
+			DurationMS:     workout.DurationMS,
+			DistanceM:      workout.DistanceM,
+			AvgHRBPM:       workout.AvgHRBPM,
+			MaxHRBPM:       workout.MaxHRBPM,
+			CaloriesKcal:   workout.CaloriesKcal,
+			CadenceSPM:     workout.CadenceSPM,
+			ElevationGainM: workout.ElevationGainM,
+			PaceSecPerKM:   workout.PaceSecPerKM,
+			WatchVerified:  workout.WatchVerified,
+			Splits:         splits,
 		})
 	}
 

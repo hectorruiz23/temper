@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/hectorruiz23/temper/api/internal/kernel"
 	"github.com/hectorruiz23/temper/api/internal/plans/domain"
@@ -34,17 +35,17 @@ func (s *Store) CreatePlan(ctx context.Context, plan domain.Plan) (int64, error)
 		for _, session := range plan.Sessions {
 			if _, err := query.ExecContext(ctx, `INSERT INTO session_template (id, plan_version_id, position, scheduled_date, weekday, discipline, target) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 				session.ID, id, session.Position, nullableString(session.ScheduledDate), nullableInt(session.Weekday), session.Discipline, nullString(session.Target)); err != nil {
-				return err
+				return duplicateTemplate(session, err)
 			}
 			for _, exercise := range session.Exercises {
-				if _, err := query.ExecContext(ctx, `INSERT INTO session_exercise (template_id, position, exercise_id, target_sets, reps_min, reps_max, target_kg, tempo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-					session.ID, exercise.Position, exercise.ExerciseID, nullableInt(exercise.TargetSets), nullableInt(exercise.RepsMin), nullableInt(exercise.RepsMax), nullableFloat(exercise.TargetKG), nullableString(exercise.Tempo)); err != nil {
+				if _, err := query.ExecContext(ctx, `INSERT INTO session_exercise (plan_version_id, template_id, position, exercise_id, target_sets, reps_min, reps_max, target_kg, tempo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					id, session.ID, exercise.Position, exercise.ExerciseID, nullableInt(exercise.TargetSets), nullableInt(exercise.RepsMin), nullableInt(exercise.RepsMax), nullableFloat(exercise.TargetKG), nullableString(exercise.Tempo)); err != nil {
 					return err
 				}
 			}
 			for _, step := range session.Steps {
-				if _, err := query.ExecContext(ctx, `INSERT INTO interval_step (template_id, position, label, duration_ms, distance_m) VALUES (?, ?, ?, ?, ?)`,
-					session.ID, step.Position, step.Label, nullableInt(step.DurationMS), nullableFloat(step.DistanceM)); err != nil {
+				if _, err := query.ExecContext(ctx, `INSERT INTO interval_step (plan_version_id, template_id, position, label, duration_ms, distance_m) VALUES (?, ?, ?, ?, ?, ?)`,
+					id, session.ID, step.Position, step.Label, nullableInt(step.DurationMS), nullableFloat(step.DistanceM)); err != nil {
 					return err
 				}
 			}
@@ -82,6 +83,20 @@ func (s *Store) PlanEffectiveOn(ctx context.Context, date string) (domain.Plan, 
 		return domain.Plan{}, err
 	}
 	return s.loadPlan(ctx, id)
+}
+
+func duplicateTemplate(session domain.Session, err error) error {
+	message := ""
+	if err != nil {
+		message = err.Error()
+	}
+	if strings.Contains(message, "UNIQUE constraint failed: session_template.plan_version_id, session_template.id") {
+		return kernel.NewRuleError("session_id_taken", fmt.Sprintf("session id %q is already used by another session in this plan version", session.ID))
+	}
+	if strings.Contains(message, "UNIQUE constraint failed: session_template.plan_version_id, session_template.position") {
+		return kernel.NewRuleError("session_position_taken", fmt.Sprintf("position %d is already used by another session in this plan version", session.Position))
+	}
+	return err
 }
 
 func checkGoal(ctx context.Context, query queryer, goalID string) error {
@@ -243,13 +258,13 @@ func (s *Store) loadSessions(ctx context.Context, query queryer, planID int64) (
 	rows.Close()
 
 	for index := range sessions {
-		exercises, err := s.loadSessionExercises(ctx, query, sessions[index].ID)
+		exercises, err := s.loadSessionExercises(ctx, query, planID, sessions[index].ID)
 		if err != nil {
 			return nil, err
 		}
 		sessions[index].Exercises = exercises
 
-		steps, err := s.loadIntervalSteps(ctx, query, sessions[index].ID)
+		steps, err := s.loadIntervalSteps(ctx, query, planID, sessions[index].ID)
 		if err != nil {
 			return nil, err
 		}
@@ -259,8 +274,8 @@ func (s *Store) loadSessions(ctx context.Context, query queryer, planID int64) (
 	return sessions, nil
 }
 
-func (s *Store) loadSessionExercises(ctx context.Context, query queryer, templateID string) ([]domain.SessionExercise, error) {
-	rows, err := query.QueryContext(ctx, `SELECT position, exercise_id, target_sets, reps_min, reps_max, target_kg, tempo FROM session_exercise WHERE template_id = ? ORDER BY position`, templateID)
+func (s *Store) loadSessionExercises(ctx context.Context, query queryer, planID int64, templateID string) ([]domain.SessionExercise, error) {
+	rows, err := query.QueryContext(ctx, `SELECT position, exercise_id, target_sets, reps_min, reps_max, target_kg, tempo FROM session_exercise WHERE plan_version_id = ? AND template_id = ? ORDER BY position`, planID, templateID)
 	if err != nil {
 		return nil, err
 	}
@@ -309,8 +324,8 @@ func (s *Store) loadSessionExercises(ctx context.Context, query queryer, templat
 	return exercises, nil
 }
 
-func (s *Store) loadIntervalSteps(ctx context.Context, query queryer, templateID string) ([]domain.IntervalStep, error) {
-	rows, err := query.QueryContext(ctx, `SELECT position, label, duration_ms, distance_m FROM interval_step WHERE template_id = ? ORDER BY position`, templateID)
+func (s *Store) loadIntervalSteps(ctx context.Context, query queryer, planID int64, templateID string) ([]domain.IntervalStep, error) {
+	rows, err := query.QueryContext(ctx, `SELECT position, label, duration_ms, distance_m FROM interval_step WHERE plan_version_id = ? AND template_id = ? ORDER BY position`, planID, templateID)
 	if err != nil {
 		return nil, err
 	}

@@ -268,15 +268,31 @@ type stageArgs struct {
 }
 
 type workoutArgs struct {
-	Origin        string   `json:"origin"`
-	ExternalID    string   `json:"external_id"`
-	DeviceKind    *string  `json:"device_kind"`
-	StartedAt     int64    `json:"started_at"`
-	EndedAt       int64    `json:"ended_at"`
-	Discipline    string   `json:"discipline"`
-	DurationMS    int64    `json:"duration_ms"`
-	DistanceM     *float64 `json:"distance_m"`
-	WatchVerified bool     `json:"watch_verified"`
+	Origin         string      `json:"origin"`
+	ExternalID     string      `json:"external_id"`
+	DeviceKind     *string     `json:"device_kind"`
+	StartedAt      int64       `json:"started_at"`
+	EndedAt        int64       `json:"ended_at"`
+	Discipline     string      `json:"discipline"`
+	DurationMS     int64       `json:"duration_ms"`
+	DistanceM      *float64    `json:"distance_m"`
+	AvgHRBPM       *int64      `json:"avg_hr_bpm"`
+	MaxHRBPM       *int64      `json:"max_hr_bpm"`
+	CaloriesKcal   *float64    `json:"calories_kcal"`
+	CadenceSPM     *float64    `json:"cadence_spm"`
+	ElevationGainM *float64    `json:"elevation_gain_m"`
+	PaceSecPerKM   *float64    `json:"pace_sec_per_km"`
+	WatchVerified  bool        `json:"watch_verified"`
+	Splits         []splitArgs `json:"splits"`
+}
+
+type splitArgs struct {
+	Position     int      `json:"position"`
+	Kind         *string  `json:"kind"`
+	DistanceM    *float64 `json:"distance_m"`
+	DurationMS   *int64   `json:"duration_ms"`
+	AvgHRBPM     *int64   `json:"avg_hr_bpm"`
+	PaceSecPerKM *float64 `json:"pace_sec_per_km"`
 }
 
 type createSessionArgs struct {

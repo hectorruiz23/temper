@@ -46,12 +46,13 @@ type performedEvidence struct {
 }
 
 type weekDayResponse struct {
-	Date         string   `json:"date"`
-	Revision     int64    `json:"revision"`
-	SleepMS      *int64   `json:"sleep_ms"`
-	Steps        *int64   `json:"steps"`
-	RestingHRBPM *int64   `json:"resting_hr_bpm"`
-	HRVRMSSDMS   *float64 `json:"hrv_rmssd_ms"`
+	Date         string            `json:"date"`
+	Revision     int64             `json:"revision"`
+	SleepMS      *int64            `json:"sleep_ms"`
+	Steps        *int64            `json:"steps"`
+	RestingHRBPM *int64            `json:"resting_hr_bpm"`
+	HRVRMSSDMS   *float64          `json:"hrv_rmssd_ms"`
+	Workouts     []workoutResponse `json:"workouts"`
 }
 
 type plannedCandidate struct {
@@ -110,6 +111,13 @@ func (h *Handler) week(ctx context.Context, date string) (weekResponse, error) {
 			}
 			return weekResponse{}, err
 		}
+		workouts := make([]workoutResponse, 0, len(day.Workouts))
+		for _, workout := range day.Workouts {
+			if !workout.Present {
+				continue
+			}
+			workouts = append(workouts, workoutResponseFrom(workout))
+		}
 		days = append(days, weekDayResponse{
 			Date:         day.Date,
 			Revision:     day.Revision,
@@ -117,6 +125,7 @@ func (h *Handler) week(ctx context.Context, date string) (weekResponse, error) {
 			Steps:        day.Steps,
 			RestingHRBPM: day.RestingHRBPM,
 			HRVRMSSDMS:   day.HRVRMSSDMS,
+			Workouts:     workouts,
 		})
 	}
 

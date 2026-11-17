@@ -344,8 +344,8 @@ func dumpPlanRows(t *testing.T, database *sql.DB, planID int64) map[string][]str
 	queries := map[string]string{
 		"plan_version":     `SELECT * FROM plan_version WHERE id = ?`,
 		"session_template": `SELECT * FROM session_template WHERE plan_version_id = ? ORDER BY position, id`,
-		"session_exercise": `SELECT se.* FROM session_exercise se JOIN session_template st ON st.id = se.template_id WHERE st.plan_version_id = ? ORDER BY se.template_id, se.position`,
-		"interval_step":    `SELECT istep.* FROM interval_step istep JOIN session_template st ON st.id = istep.template_id WHERE st.plan_version_id = ? ORDER BY istep.template_id, istep.position`,
+		"session_exercise": `SELECT se.* FROM session_exercise se JOIN session_template st ON st.plan_version_id = se.plan_version_id AND st.id = se.template_id WHERE st.plan_version_id = ? ORDER BY se.template_id, se.position`,
+		"interval_step":    `SELECT istep.* FROM interval_step istep JOIN session_template st ON st.plan_version_id = istep.plan_version_id AND st.id = istep.template_id WHERE st.plan_version_id = ? ORDER BY istep.template_id, istep.position`,
 	}
 
 	result := make(map[string][]string, len(queries))

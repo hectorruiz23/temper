@@ -312,6 +312,75 @@ func TestToolsList(t *testing.T) {
 	}
 }
 
+func TestGetDayCarriesWorkoutMetrics(t *testing.T) {
+	f := newFixture(t)
+
+	callTool(t, f.handler, 1, "upsert_day", map[string]any{
+		"idempotency_key":   "day-metrics",
+		"date":              "2026-11-10",
+		"timezone":          "Europe/Madrid",
+		"expected_revision": 0,
+		"source":            "health_connect",
+		"workouts": []map[string]any{
+			{
+				"origin":           "health_connect",
+				"external_id":      "watch-run-1",
+				"discipline":       "run",
+				"started_at":       1762758000000,
+				"ended_at":         1762759740000,
+				"duration_ms":      1740000,
+				"distance_m":       5230,
+				"avg_hr_bpm":       142,
+				"max_hr_bpm":       171,
+				"calories_kcal":    412.5,
+				"cadence_spm":      168,
+				"elevation_gain_m": 96,
+				"splits": []map[string]any{
+					{"position": 0, "kind": "km", "distance_m": 1000, "duration_ms": 330000, "avg_hr_bpm": 138},
+				},
+			},
+		},
+	})
+
+	read := callTool(t, f.handler, 2, "get_day", map[string]any{"date": "2026-11-10"})
+	var result struct {
+		Day struct {
+			Workouts []struct {
+				AvgHRBPM       *int64   `json:"avg_hr_bpm"`
+				MaxHRBPM       *int64   `json:"max_hr_bpm"`
+				CaloriesKcal   *float64 `json:"calories_kcal"`
+				CadenceSPM     *float64 `json:"cadence_spm"`
+				ElevationGainM *float64 `json:"elevation_gain_m"`
+				PaceSecPerKM   *float64 `json:"pace_sec_per_km"`
+				Splits         []struct {
+					Position     int      `json:"position"`
+					PaceSecPerKM *float64 `json:"pace_sec_per_km"`
+				} `json:"splits"`
+			} `json:"workouts"`
+		} `json:"day"`
+	}
+	structured(t, read, &result)
+	if len(result.Day.Workouts) != 1 {
+		t.Fatalf("workouts = %+v", result.Day.Workouts)
+	}
+	workout := result.Day.Workouts[0]
+	if workout.AvgHRBPM == nil || *workout.AvgHRBPM != 142 || workout.MaxHRBPM == nil || *workout.MaxHRBPM != 171 {
+		t.Fatalf("heart rate = %v/%v", workout.AvgHRBPM, workout.MaxHRBPM)
+	}
+	if workout.CaloriesKcal == nil || *workout.CaloriesKcal != 412.5 {
+		t.Fatalf("calories = %v", workout.CaloriesKcal)
+	}
+	if workout.CadenceSPM == nil || *workout.CadenceSPM != 168 || workout.ElevationGainM == nil || *workout.ElevationGainM != 96 {
+		t.Fatalf("cadence/elevation = %v/%v", workout.CadenceSPM, workout.ElevationGainM)
+	}
+	if workout.PaceSecPerKM == nil || *workout.PaceSecPerKM < 332.6 || *workout.PaceSecPerKM > 332.8 {
+		t.Fatalf("pace = %v, want 332.7", workout.PaceSecPerKM)
+	}
+	if len(workout.Splits) != 1 || workout.Splits[0].PaceSecPerKM == nil || *workout.Splits[0].PaceSecPerKM != 330 {
+		t.Fatalf("splits = %+v", workout.Splits)
+	}
+}
+
 func TestAllToolsAgainstServices(t *testing.T) {
 	f := newFixture(t)
 

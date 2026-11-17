@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 
 	"github.com/hectorruiz23/temper/api/internal/kernel"
 	"github.com/hectorruiz23/temper/api/internal/training/domain"
@@ -82,6 +83,7 @@ func (s *Service) CreateSession(ctx context.Context, command CreateSessionComman
 	}
 
 	var result domain.Session
+	var sessionPlanVersion *int64
 	err = s.store.WithinTransaction(ctx, func(ctx context.Context, tx Transaction) error {
 		receipt, found, err := tx.FindReceipt(ctx, OperationCreateSession, command.IdempotencyKey)
 		if err != nil {
@@ -95,7 +97,7 @@ func (s *Service) CreateSession(ctx context.Context, command CreateSessionComman
 		}
 
 		if input.TemplateID != nil {
-			templateDiscipline, exists, err := tx.Template(ctx, *input.TemplateID)
+			templateDiscipline, planVersionID, exists, err := tx.Template(ctx, *input.TemplateID, input.Date)
 			if err != nil {
 				return err
 			}
@@ -105,17 +107,20 @@ func (s *Service) CreateSession(ctx context.Context, command CreateSessionComman
 			if err := domain.ValidateTemplateDiscipline(input.Discipline, templateDiscipline); err != nil {
 				return err
 			}
+			planVersion := planVersionID
+			sessionPlanVersion = &planVersion
 		}
 
 		session := domain.Session{
-			ID:         input.ID,
-			TemplateID: input.TemplateID,
-			Date:       input.Date,
-			Discipline: input.Discipline,
-			StartedAt:  input.StartedAt,
-			CreatedAt:  s.clock.Now().UnixMilli(),
-			Revision:   1,
-			Complete:   false,
+			ID:            input.ID,
+			PlanVersionID: sessionPlanVersion,
+			TemplateID:    input.TemplateID,
+			Date:          input.Date,
+			Discipline:    input.Discipline,
+			StartedAt:     input.StartedAt,
+			CreatedAt:     s.clock.Now().UnixMilli(),
+			Revision:      1,
+			Complete:      false,
 		}
 		if err := tx.CreateSession(ctx, session); err != nil {
 			return err
@@ -137,6 +142,32 @@ func (s *Service) CreateSession(ctx context.Context, command CreateSessionComman
 	}
 
 	return result, nil
+}
+
+func (s *Service) DiscardSession(ctx context.Context, id string) error {
+	if len(strings.TrimSpace(id)) == 0 {
+		return kernel.NewRuleError("invalid_input", "session id is required")
+	}
+
+	return s.store.WithinTransaction(ctx, func(ctx context.Context, tx Transaction) error {
+		session, err := tx.Session(ctx, id)
+		if err != nil {
+			return err
+		}
+		if session.Complete {
+			return kernel.NewRuleError("session_complete", "a completed session cannot be discarded")
+		}
+
+		sets, err := tx.SetCount(ctx, id)
+		if err != nil {
+			return err
+		}
+		if sets > 0 {
+			return kernel.NewRuleError("session_has_sets", "a session with logged sets cannot be discarded")
+		}
+
+		return tx.DeleteSession(ctx, id)
+	})
 }
 
 func (s *Service) CheckIn(ctx context.Context, command CheckInCommand) (CheckInResult, error) {

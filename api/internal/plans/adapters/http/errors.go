@@ -29,7 +29,7 @@ func statusForRule(code string) int {
 		return nethttp.StatusBadRequest
 	case "not_found":
 		return nethttp.StatusNotFound
-	case "idempotency_conflict", "exercise_exists":
+	case "idempotency_conflict", "exercise_exists", "session_id_taken", "session_position_taken":
 		return nethttp.StatusConflict
 	case "unknown_exercise", "unavailable_equipment", "equipment_limit", "invalid_schedule", "invalid_target", "invalid_interval_steps", "unknown_equipment":
 		return nethttp.StatusUnprocessableEntity
