@@ -131,6 +131,9 @@ func validateWorkouts(workouts []Workout) error {
 		if workout.DistanceM != nil && *workout.DistanceM < 0 {
 			return invalid("workout distance_m must not be negative")
 		}
+		if err := validateWorkoutMetrics(workout); err != nil {
+			return err
+		}
 		key := workout.Origin + "\x00" + workout.ExternalID
 		if seen[key] {
 			return invalid("workout %s/%s appears more than once", workout.Origin, workout.ExternalID)
