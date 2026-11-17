@@ -60,8 +60,8 @@ class ResultViewModel(
             when (val outcome = container.api.week(config.endpoint, config.token, date.toString())) {
                 is ReadOutcome.Success -> {
                     val watch = outcome.value.performed.firstOrNull {
-                        it.date == dateValue && !it.watchWorkoutId.isNullOrBlank()
-                    }?.watchWorkoutId
+                        it.date == dateValue && !it.evidence?.workoutId.isNullOrBlank()
+                    }?.evidence?.workoutId
                     mutableState.value = ResultUiState.Content(watch)
                 }
                 is ReadOutcome.Failure -> mutableState.value = ResultUiState.Error(

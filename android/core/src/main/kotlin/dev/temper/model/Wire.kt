@@ -33,10 +33,9 @@ data class PerformedSession(
     @SerialName("template_id") val templateId: String? = null,
     val discipline: String? = null,
     @SerialName("started_at") val startedAt: String? = null,
-    @SerialName("reported_completed_at") val reportedCompletedAt: String? = null,
-    @SerialName("watch_workout_id") val watchWorkoutId: String? = null,
     val revision: Long = 1,
     val complete: Boolean = false,
+    val evidence: Evidence? = null,
 )
 
 @Serializable
