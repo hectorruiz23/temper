@@ -61,7 +61,7 @@ func (t *transaction) CurrentTargets(ctx context.Context, exerciseID string) ([]
 
 	rows, err := t.query.QueryContext(ctx, `SELECT se.template_id, se.target_sets, se.reps_min, se.reps_max, se.target_kg, se.tempo
 		FROM session_exercise se
-		JOIN session_template st ON st.id = se.template_id
+		JOIN session_template st ON st.plan_version_id = se.plan_version_id AND st.id = se.template_id
 		WHERE st.plan_version_id = ? AND se.exercise_id = ?
 		ORDER BY st.position, st.id, se.position`, planID, exerciseID)
 	if err != nil {
