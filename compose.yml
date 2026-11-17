@@ -4,7 +4,7 @@ services:
     container_name: temper
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8787:8787"
+      - "127.0.0.1:${TEMPER_PORT:-8787}:8787"
     environment:
       TEMPER_DB: /data/temper.db
       TEMPER_TOKEN: ${TEMPER_TOKEN:?set TEMPER_TOKEN in the untracked .env}
@@ -21,6 +21,7 @@ services:
       start_period: 5s
 
   watchtower:
+    profiles: ["watchtower"]
     image: containrrr/watchtower:1.7.1
     container_name: temper-watchtower
     restart: unless-stopped
