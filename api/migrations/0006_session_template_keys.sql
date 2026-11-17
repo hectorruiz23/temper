@@ -1,12 +1,3 @@
--- A session id was the primary key of session_template, so an id could exist
--- only once in the whole database. Changing a session in a new plan version
--- therefore forced the caller to invent a fresh id for an otherwise identical
--- session, and the previous version lost the link. Ids are now unique per plan
--- version, and every child row carries the version it belongs to.
---
--- The rebuild happens inside the migration transaction, so the checks are
--- deferred until commit: the tables are dropped and recreated under their
--- final names and only the committed state has to be consistent.
 PRAGMA defer_foreign_keys = ON;
 
 CREATE TABLE session_template_keys (
@@ -80,6 +71,45 @@ SELECT ts.id, st.plan_version_id, ts.template_id, ts.date, ts.discipline, ts.sta
 FROM training_session ts
 LEFT JOIN session_template st ON st.id = ts.template_id;
 
+CREATE TABLE logged_set_keys (
+    id               TEXT    PRIMARY KEY,
+    session_id       TEXT    NOT NULL,
+    exercise_id      TEXT    NOT NULL REFERENCES exercise(id),
+    set_index        INTEGER NOT NULL CHECK (set_index > 0),
+    kg               REAL    NOT NULL CHECK (kg >= 0),
+    reps             INTEGER NOT NULL CHECK (reps > 0),
+    note             TEXT    NULL,
+    evidence_source  TEXT    NOT NULL CHECK (evidence_source IN ('watch', 'reported')),
+    idempotency_key  TEXT    NULL,
+    created_at       INTEGER NOT NULL,
+    revision         INTEGER NOT NULL CHECK (revision > 0),
+    UNIQUE (session_id, exercise_id, set_index),
+    FOREIGN KEY (session_id) REFERENCES training_session_keys(id)
+);
+
+INSERT INTO logged_set_keys (id, session_id, exercise_id, set_index, kg, reps, note, evidence_source, idempotency_key, created_at, revision)
+SELECT id, session_id, exercise_id, set_index, kg, reps, note, evidence_source, idempotency_key, created_at, revision
+FROM logged_set;
+
+CREATE TABLE set_correction_keys (
+    id                 TEXT    PRIMARY KEY,
+    set_id             TEXT    NOT NULL,
+    created_at         INTEGER NOT NULL,
+    reason             TEXT    NOT NULL,
+    before_json        TEXT    NOT NULL,
+    after_json         TEXT    NOT NULL,
+    resulting_revision INTEGER NOT NULL,
+    idempotency_key    TEXT    NULL,
+    UNIQUE (set_id, resulting_revision),
+    FOREIGN KEY (set_id) REFERENCES logged_set_keys(id)
+);
+
+INSERT INTO set_correction_keys (id, set_id, created_at, reason, before_json, after_json, resulting_revision, idempotency_key)
+SELECT id, set_id, created_at, reason, before_json, after_json, resulting_revision, idempotency_key
+FROM set_correction;
+
+DROP TABLE set_correction;
+DROP TABLE logged_set;
 DROP TABLE session_exercise;
 DROP TABLE interval_step;
 DROP TABLE training_session;
@@ -89,9 +119,13 @@ ALTER TABLE session_template_keys RENAME TO session_template;
 ALTER TABLE session_exercise_keys RENAME TO session_exercise;
 ALTER TABLE interval_step_keys RENAME TO interval_step;
 ALTER TABLE training_session_keys RENAME TO training_session;
+ALTER TABLE logged_set_keys RENAME TO logged_set;
+ALTER TABLE set_correction_keys RENAME TO set_correction;
 
 CREATE INDEX session_template_scheduled_date ON session_template (plan_version_id, scheduled_date);
 CREATE INDEX session_template_weekday ON session_template (plan_version_id, weekday);
 CREATE INDEX session_exercise_exercise ON session_exercise (exercise_id);
 CREATE INDEX training_session_date ON training_session (date);
 CREATE INDEX training_session_template ON training_session (template_id);
+CREATE INDEX logged_set_exercise_created ON logged_set (exercise_id, created_at);
+CREATE INDEX set_correction_set_created ON set_correction (set_id, created_at);
