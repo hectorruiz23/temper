@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"time"
+	_ "time/tzdata"
 
 	healthhttp "github.com/hectorruiz23/temper/api/internal/health/adapters/http"
 	healthsqlite "github.com/hectorruiz23/temper/api/internal/health/adapters/sqlite"
