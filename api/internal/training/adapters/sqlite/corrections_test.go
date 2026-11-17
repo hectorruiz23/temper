@@ -319,7 +319,8 @@ func TestProgressionReadsCorrectedHistoryAndPlanTargets(t *testing.T) {
 	ctx := context.Background()
 	seedCorrectableExercise(t, database, "goblet-squat")
 	seedTrainingTemplate(t, database, "template-strength", domain.DisciplineStrength)
-	if _, err := database.Exec(`INSERT INTO session_exercise (template_id, position, exercise_id, target_sets, reps_min, reps_max, target_kg, tempo) VALUES ('template-strength', 0, 'goblet-squat', 3, 8, 12, 20, '3-1-1')`); err != nil {
+	if _, err := database.Exec(`INSERT INTO session_exercise (plan_version_id, template_id, position, exercise_id, target_sets, reps_min, reps_max, target_kg, tempo)
+		SELECT plan_version_id, 'template-strength', 0, 'goblet-squat', 3, 8, 12, 20, '3-1-1' FROM session_template WHERE id = 'template-strength'`); err != nil {
 		t.Fatalf("insert session exercise: %v", err)
 	}
 	session := newTrainingSession(t, service, "session-1")

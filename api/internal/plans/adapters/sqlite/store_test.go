@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/hectorruiz23/temper/api/internal/kernel"
@@ -306,6 +307,28 @@ func TestCreatePlanRollsBackEveryRow(t *testing.T) {
 	}
 }
 
+func TestCreatePlanNamesTheDuplicatedSessionID(t *testing.T) {
+	store, _ := testStore(t)
+	ctx := context.Background()
+	createExercise(t, store, "goblet-squat", 1)
+
+	plan := validPlan("goblet-squat")
+	duplicate := plan.Sessions[0]
+	duplicate.Position = 2
+	plan.Sessions = append(plan.Sessions, duplicate)
+
+	_, err := store.CreatePlan(ctx, plan)
+	requireCode(t, err, "session_id_taken")
+
+	var ruleError kernel.RuleError
+	if !errors.As(err, &ruleError) {
+		t.Fatalf("error %v is not a kernel.RuleError", err)
+	}
+	if !strings.Contains(ruleError.Message, duplicate.ID) {
+		t.Fatalf("message %q does not name the session %q", ruleError.Message, duplicate.ID)
+	}
+}
+
 func TestCreatePlanRejections(t *testing.T) {
 	store, _ := testStore(t)
 	ctx := context.Background()
@@ -363,8 +386,8 @@ func dumpVersionRows(t *testing.T, database *sql.DB, planID int64) map[string][]
 	queries := map[string]string{
 		"plan_version":     `SELECT * FROM plan_version WHERE id = ?`,
 		"session_template": `SELECT * FROM session_template WHERE plan_version_id = ? ORDER BY position, id`,
-		"session_exercise": `SELECT se.* FROM session_exercise se JOIN session_template st ON st.id = se.template_id WHERE st.plan_version_id = ? ORDER BY se.template_id, se.position`,
-		"interval_step":    `SELECT istep.* FROM interval_step istep JOIN session_template st ON st.id = istep.template_id WHERE st.plan_version_id = ? ORDER BY istep.template_id, istep.position`,
+		"session_exercise": `SELECT se.* FROM session_exercise se JOIN session_template st ON st.plan_version_id = se.plan_version_id AND st.id = se.template_id WHERE st.plan_version_id = ? ORDER BY se.template_id, se.position`,
+		"interval_step":    `SELECT istep.* FROM interval_step istep JOIN session_template st ON st.plan_version_id = istep.plan_version_id AND st.id = istep.template_id WHERE st.plan_version_id = ? ORDER BY istep.template_id, istep.position`,
 	}
 
 	result := make(map[string][]string, len(queries))
