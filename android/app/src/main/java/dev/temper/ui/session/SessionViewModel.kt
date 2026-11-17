@@ -34,6 +34,8 @@ data class SessionContent(
     val discipline: String,
     val target: String,
     val exercises: List<SessionExerciseView>,
+    val existingSessionId: String? = null,
+    val existingRevision: Long = 0,
 )
 
 sealed interface SessionUiState {
@@ -101,6 +103,9 @@ class SessionViewModel(
                 return@launch
             }
             val planned = week.planned.firstOrNull { it.templateId == templateId && it.date == dateValue }
+            val existing = week.performed.firstOrNull {
+                it.date == dateValue && it.templateId == templateId && !it.id.isNullOrBlank()
+            }
             val names = exerciseList.associate { it.id to it.name }
             val views = template.exercises.sortedBy { it.position }.map { exercise ->
                 SessionExerciseView(
@@ -117,6 +122,8 @@ class SessionViewModel(
                     discipline = planned?.discipline ?: template.discipline,
                     target = planned?.target?.ifBlank { template.target } ?: template.target,
                     exercises = views,
+                    existingSessionId = existing?.id,
+                    existingRevision = existing?.revision ?: 0,
                 ),
             )
         }

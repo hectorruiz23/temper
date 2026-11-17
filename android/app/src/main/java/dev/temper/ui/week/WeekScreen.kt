@@ -1,16 +1,14 @@
 package dev.temper.ui.week
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.temper.AppContainer
 import dev.temper.model.PlannedSession
-import dev.temper.model.WeekDay
 import dev.temper.model.WeekResponse
 import dev.temper.ui.TemperSimpleFactory
 import dev.temper.ui.components.AccentBlock
@@ -36,23 +33,15 @@ import dev.temper.ui.components.ErrorPane
 import dev.temper.ui.components.Eyebrow
 import dev.temper.ui.components.Hairline
 import dev.temper.ui.components.LoadingPane
-import dev.temper.ui.components.PrimaryButton
-import dev.temper.ui.components.QuietButton
 import dev.temper.ui.components.RailHint
-import dev.temper.ui.components.SyncStrip
 import dev.temper.ui.components.TemperScaffold
 import dev.temper.ui.components.TemperTopBar
 import dev.temper.ui.components.TopBarAction
-import dev.temper.ui.dayLabel
-import dev.temper.ui.formatSleep
-import dev.temper.ui.health.HealthSyncBlock
 import dev.temper.ui.parseDate
 import dev.temper.ui.theme.Card
 import dev.temper.ui.theme.DataFont
-import dev.temper.ui.theme.Hair
 import dev.temper.ui.theme.Ink
 import dev.temper.ui.theme.Panel
-import dev.temper.ui.theme.PaperSoft
 import dev.temper.ui.weekLabel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -62,7 +51,6 @@ import java.util.Locale
 fun WeekScreen(
     container: AppContainer,
     onOpenSession: (String, String) -> Unit,
-    onOpenRunner: (String, String, Long) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val viewModel = viewModel<WeekViewModel>(factory = TemperSimpleFactory { WeekViewModel(container) })
@@ -75,8 +63,6 @@ fun WeekScreen(
     val content = state as? WeekUiState.Content
     val today = content?.today ?: LocalDate.now()
     val todayPlanned = content?.week?.planned?.filter { it.date == today.toString() }.orEmpty()
-    val firstStrength = todayPlanned.firstOrNull { it.discipline == "strength" }
-    val firstIntervals = todayPlanned.firstOrNull { it.discipline == "intervals" }
 
     TemperScaffold(
         topBar = {
@@ -92,32 +78,13 @@ fun WeekScreen(
                 is WeekUiState.NeedsConfiguration -> RailHint("No endpoint or token", "open Settings")
                 is WeekUiState.Error -> RailHint("No answer", "07:42")
                 is WeekUiState.Content -> {
-                    if (firstStrength != null) {
-                        RailHint("Today · ${firstStrength.target.ifBlank { "strength" }}", "plan v${firstStrength.planVersionId}")
-                    } else if (firstIntervals != null) {
-                        RailHint("Today · ${firstIntervals.target.ifBlank { "intervals" }}", "plan v${firstIntervals.planVersionId}")
-                    } else if (todayPlanned.isNotEmpty()) {
-                        RailHint("Today · ${todayPlanned.first().discipline}", "plan v${todayPlanned.first().planVersionId}")
+                    val first = todayPlanned.firstOrNull()
+                    if (first != null) {
+                        RailHint("Today · ${first.target.ifBlank { first.discipline }}", "plan v${first.planVersionId}")
                     } else {
                         RailHint("Today · rest", "nothing planned")
                     }
                 }
-            }
-            when {
-                state is WeekUiState.Content && firstStrength != null -> PrimaryButton(
-                    text = "Start session",
-                    onClick = { onOpenSession(today.toString(), firstStrength.templateId) },
-                )
-                state is WeekUiState.Content && firstIntervals != null -> PrimaryButton(
-                    text = "Start intervals",
-                    onClick = {
-                        onOpenRunner(today.toString(), firstIntervals.templateId, firstIntervals.planVersionId)
-                    },
-                )
-                state is WeekUiState.Content -> PrimaryButton(text = "Check again", onClick = viewModel::load)
-                state is WeekUiState.NeedsConfiguration -> PrimaryButton(text = "Open Settings", onClick = onOpenSettings)
-                state is WeekUiState.Error -> PrimaryButton(text = "Try again", onClick = viewModel::load)
-                else -> Unit
             }
         },
     ) {
@@ -137,11 +104,9 @@ fun WeekScreen(
                 onAction = if (current.retryable) viewModel::load else onOpenSettings,
             )
             is WeekUiState.Content -> WeekContent(
-                container = container,
                 week = current.week,
                 today = current.today,
                 onOpenSession = onOpenSession,
-                onOpenRunner = onOpenRunner,
             )
         }
     }
@@ -149,19 +114,16 @@ fun WeekScreen(
 
 @Composable
 private fun WeekContent(
-    container: AppContainer,
     week: WeekResponse,
     today: LocalDate,
     onOpenSession: (String, String) -> Unit,
-    onOpenRunner: (String, String, Long) -> Unit,
 ) {
     val start = parseDate(week.weekStart) ?: today
     val days = (0..6).map { start.plusDays(it.toLong()) }
-    val healthToday = week.days.firstOrNull { it.date == today.toString() }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
     ) {
         if (week.planned.isEmpty()) {
             item {
@@ -174,34 +136,42 @@ private fun WeekContent(
         }
         items(days) { date ->
             val planned = week.planned.filter { it.date == date.toString() }
+            val performed = week.performed.any { it.date == date.toString() && it.complete }
             if (date == today) {
                 TodayRow(
                     date = date,
                     planned = planned,
-                    performed = week.performed.any { it.date == date.toString() && it.complete },
+                    performed = performed,
                     onOpenSession = onOpenSession,
-                    onOpenRunner = onOpenRunner,
                 )
             } else {
-                DayRow(date = date, planned = planned, performed = week.performed.any { it.date == date.toString() && it.complete })
+                DayRow(
+                    date = date,
+                    planned = planned,
+                    performed = performed,
+                    onOpenSession = onOpenSession,
+                )
             }
-        }
-        item {
-            Spacer(modifier = Modifier.height(8.dp))
-            HealthBlock(day = healthToday, today = today)
-            Spacer(modifier = Modifier.height(8.dp))
-            HealthSyncBlock(container)
         }
     }
 }
 
 @Composable
-private fun DayRow(date: LocalDate, planned: List<PlannedSession>, performed: Boolean) {
+private fun DayRow(
+    date: LocalDate,
+    planned: List<PlannedSession>,
+    performed: Boolean,
+    onOpenSession: (String, String) -> Unit,
+) {
+    val session = planned.firstOrNull()
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
-            .background(Card.copy(alpha = 0.0f)),
+            .background(Card.copy(alpha = 0.0f))
+            .clickable(enabled = session != null) {
+                if (session != null) onOpenSession(date.toString(), session.templateId)
+            },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.width(54.dp)) {
@@ -250,9 +220,16 @@ private fun TodayRow(
     planned: List<PlannedSession>,
     performed: Boolean,
     onOpenSession: (String, String) -> Unit,
-    onOpenRunner: (String, String, Long) -> Unit,
 ) {
-    Column(modifier = Modifier.padding(vertical = 6.dp)) {
+    val session = planned.firstOrNull()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .clickable(enabled = session != null) {
+                if (session != null) onOpenSession(date.toString(), session.templateId)
+            },
+    ) {
         AccentBlock {
             Eyebrow("Today · ${planned.firstOrNull()?.discipline ?: "rest"}")
             Text(
@@ -278,54 +255,7 @@ private fun TodayRow(
                     )
                 }
             }
-            val strength = planned.firstOrNull { it.discipline == "strength" }
-            if (strength != null) {
-                Spacer(modifier = Modifier.height(4.dp))
-                QuietButton(
-                    text = "Open session",
-                    onClick = { onOpenSession(date.toString(), strength.templateId) },
-                )
-            }
-            val intervals = planned.firstOrNull { it.discipline == "intervals" }
-            if (intervals != null) {
-                Spacer(modifier = Modifier.height(4.dp))
-                QuietButton(
-                    text = "Start intervals",
-                    onClick = { onOpenRunner(date.toString(), intervals.templateId, intervals.planVersionId) },
-                )
-            }
         }
     }
     Hairline()
-}
-
-@Composable
-private fun HealthBlock(day: WeekDay?, today: LocalDate) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(PaperSoft)
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Eyebrow("Day data · ${today.format(DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH))}")
-        if (day == null) {
-            Text(
-                text = "No health data for today. Unavailable values are not shown as zero.",
-                color = Panel,
-                style = MaterialTheme.typography.labelMedium,
-            )
-            return@Column
-        }
-        Text(
-            text = "Sleep ${formatSleep(day.sleepMs)} · Steps ${day.steps ?: "—"}",
-            color = Ink,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text(
-            text = "Resting HR ${day.restingHrBpm ?: "—"} · HRV ${day.hrvRmssdMs?.let { it.toString() } ?: "—"} ms",
-            color = Ink,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-    }
 }

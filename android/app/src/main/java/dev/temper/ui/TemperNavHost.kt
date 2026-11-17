@@ -48,9 +48,6 @@ fun TemperNavHost(container: AppContainer) {
             WeekScreen(
                 container = container,
                 onOpenSession = { date, templateId -> navController.navigate(Routes.session(date, templateId)) },
-                onOpenRunner = { date, templateId, planVersionId ->
-                    navController.navigate(Routes.runner(date, templateId, planVersionId))
-                },
                 onOpenSettings = { navController.navigate(Routes.Settings) { launchSingleTop = true } },
             )
         }

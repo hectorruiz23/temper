@@ -10,6 +10,8 @@ import dev.temper.health.SleepSample
 import dev.temper.health.SleepStageSample
 import dev.temper.health.StepsSample
 import dev.temper.health.healthDayKey
+import dev.temper.health.healthDaysLabel
+import dev.temper.health.lastSevenDays
 import dev.temper.model.DayMetrics
 import dev.temper.model.DayUploadRequest
 import dev.temper.model.DayWorkout
@@ -209,6 +211,36 @@ class HealthDayAggregatorTest {
     fun theUploadKeyIsStableForADayAndRevision() {
         assertEquals("day-2026-11-16-0", healthDayKey(LocalDate.of(2026, 11, 16), 0))
         assertEquals("day-2026-11-16-3", healthDayKey(LocalDate.of(2026, 11, 16), 3))
+    }
+
+    @Test
+    fun aSyncCoversTodayAndTheSixDaysBeforeIt() {
+        val today = LocalDate.of(2026, 11, 23)
+
+        assertEquals(
+            listOf(
+                LocalDate.of(2026, 11, 23),
+                LocalDate.of(2026, 11, 22),
+                LocalDate.of(2026, 11, 21),
+                LocalDate.of(2026, 11, 20),
+                LocalDate.of(2026, 11, 19),
+                LocalDate.of(2026, 11, 18),
+                LocalDate.of(2026, 11, 17),
+            ),
+            lastSevenDays(today),
+        )
+    }
+
+    @Test
+    fun daysWithoutDataAreNamedWithASingleMonthSuffix() {
+        assertEquals(
+            "21, 22 Nov",
+            healthDaysLabel(listOf(LocalDate.of(2026, 11, 21), LocalDate.of(2026, 11, 22))),
+        )
+        assertEquals(
+            "30 Oct, 1 Nov",
+            healthDaysLabel(listOf(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 10, 30))),
+        )
     }
 
     @Test
