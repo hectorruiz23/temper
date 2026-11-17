@@ -24,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.temper.AppContainer
+import dev.temper.model.Evidence
+import dev.temper.model.PerformedSession
 import dev.temper.model.PlannedSession
 import dev.temper.model.WeekResponse
 import dev.temper.ui.TemperSimpleFactory
@@ -51,6 +53,7 @@ import java.util.Locale
 fun WeekScreen(
     container: AppContainer,
     onOpenSession: (String, String) -> Unit,
+    onOpenIntervals: (String, String, Long) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val viewModel = viewModel<WeekViewModel>(factory = TemperSimpleFactory { WeekViewModel(container) })
@@ -107,6 +110,7 @@ fun WeekScreen(
                 week = current.week,
                 today = current.today,
                 onOpenSession = onOpenSession,
+                onOpenIntervals = onOpenIntervals,
             )
         }
     }
@@ -117,6 +121,7 @@ private fun WeekContent(
     week: WeekResponse,
     today: LocalDate,
     onOpenSession: (String, String) -> Unit,
+    onOpenIntervals: (String, String, Long) -> Unit,
 ) {
     val start = parseDate(week.weekStart) ?: today
     val days = (0..6).map { start.plusDays(it.toLong()) }
@@ -136,13 +141,14 @@ private fun WeekContent(
         }
         items(days) { date ->
             val planned = week.planned.filter { it.date == date.toString() }
-            val performed = week.performed.any { it.date == date.toString() && it.complete }
+            val performed = week.performed.firstOrNull { it.date == date.toString() }
             if (date == today) {
                 TodayRow(
                     date = date,
                     planned = planned,
                     performed = performed,
                     onOpenSession = onOpenSession,
+                    onOpenIntervals = onOpenIntervals,
                 )
             } else {
                 DayRow(
@@ -150,6 +156,7 @@ private fun WeekContent(
                     planned = planned,
                     performed = performed,
                     onOpenSession = onOpenSession,
+                    onOpenIntervals = onOpenIntervals,
                 )
             }
         }
@@ -160,8 +167,9 @@ private fun WeekContent(
 private fun DayRow(
     date: LocalDate,
     planned: List<PlannedSession>,
-    performed: Boolean,
+    performed: PerformedSession?,
     onOpenSession: (String, String) -> Unit,
+    onOpenIntervals: (String, String, Long) -> Unit,
 ) {
     val session = planned.firstOrNull()
     Row(
@@ -170,7 +178,7 @@ private fun DayRow(
             .height(56.dp)
             .background(Card.copy(alpha = 0.0f))
             .clickable(enabled = session != null) {
-                if (session != null) onOpenSession(date.toString(), session.templateId)
+                if (session != null) open(session, date, onOpenSession, onOpenIntervals)
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -195,9 +203,15 @@ private fun DayRow(
                 fontWeight = if (planned.isEmpty()) FontWeight.Normal else FontWeight.SemiBold,
                 maxLines = 1,
             )
-            if (planned.isNotEmpty()) {
+            val summary = buildList {
+                if (planned.isNotEmpty()) {
+                    add(planned.joinToString(" · ") { it.discipline } + " · plan v${planned.first().planVersionId}")
+                }
+                performedLine(performed)?.let(::add)
+            }.joinToString(" · ")
+            if (summary.isNotEmpty()) {
                 Text(
-                    text = planned.joinToString(" · ") { it.discipline } + " · plan v${planned.first().planVersionId}",
+                    text = summary,
                     color = Panel,
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
@@ -205,7 +219,11 @@ private fun DayRow(
             }
         }
         Text(
-            text = if (performed) "✓" else if (planned.isEmpty()) "—" else "",
+            text = when {
+                performed?.complete == true -> "✓"
+                planned.isEmpty() && performed == null -> "—"
+                else -> ""
+            },
             color = Ink,
             fontFamily = DataFont,
             style = MaterialTheme.typography.titleMedium,
@@ -218,8 +236,9 @@ private fun DayRow(
 private fun TodayRow(
     date: LocalDate,
     planned: List<PlannedSession>,
-    performed: Boolean,
+    performed: PerformedSession?,
     onOpenSession: (String, String) -> Unit,
+    onOpenIntervals: (String, String, Long) -> Unit,
 ) {
     val session = planned.firstOrNull()
     Column(
@@ -227,7 +246,7 @@ private fun TodayRow(
             .fillMaxWidth()
             .padding(vertical = 6.dp)
             .clickable(enabled = session != null) {
-                if (session != null) onOpenSession(date.toString(), session.templateId)
+                if (session != null) open(session, date, onOpenSession, onOpenIntervals)
             },
     ) {
         AccentBlock {
@@ -237,12 +256,13 @@ private fun TodayRow(
                 color = Ink,
                 style = MaterialTheme.typography.headlineLarge,
             )
+            val summary = if (planned.isEmpty()) {
+                "Nothing planned. The server answered; there is no session for ${date.dayOfMonth}."
+            } else {
+                "${planned.size} planned · plan v${planned.first().planVersionId}"
+            }
             Text(
-                text = if (planned.isEmpty()) {
-                    "Nothing planned. The server answered; there is no session for ${date.dayOfMonth}."
-                } else {
-                    "${planned.size} planned · plan v${planned.first().planVersionId}" + if (performed) " · closed" else ""
-                },
+                text = performedLine(performed)?.let { "$summary · $it" } ?: summary,
                 color = Ink,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -258,4 +278,38 @@ private fun TodayRow(
         }
     }
     Hairline()
+}
+
+private fun open(
+    session: PlannedSession,
+    date: LocalDate,
+    onOpenSession: (String, String) -> Unit,
+    onOpenIntervals: (String, String, Long) -> Unit,
+) {
+    val sessionDate = session.date.ifBlank { date.toString() }
+    if (session.discipline.equals("intervals", ignoreCase = true)) {
+        onOpenIntervals(sessionDate, session.templateId, session.planVersionId)
+    } else {
+        onOpenSession(sessionDate, session.templateId)
+    }
+}
+
+private fun performedLine(performed: PerformedSession?): String? {
+    if (performed == null) return null
+    val marker = if (performed.complete) "Logged · complete" else "Logged · open"
+    val evidence = evidenceLine(performed.evidence)
+    return if (evidence == null) marker else "$marker · $evidence"
+}
+
+private fun evidenceLine(evidence: Evidence?): String? {
+    if (evidence == null) return null
+    val source = evidence.source.takeIf { it.isNotBlank() }
+    val detail = evidence.reportedCompletedAt?.takeIf { it.isNotBlank() }
+        ?: evidence.workoutId?.takeIf { it.isNotBlank() }
+    return when {
+        source != null && detail != null -> "$source $detail"
+        source != null -> source
+        detail != null -> detail
+        else -> null
+    }
 }

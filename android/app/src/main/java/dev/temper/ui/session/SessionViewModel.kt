@@ -12,7 +12,8 @@ import dev.temper.model.CreateSessionRequest
 import dev.temper.model.PlanExercise
 import dev.temper.model.PlanSession
 import dev.temper.model.SessionEnvelope
-import dev.temper.model.WeekResponse
+import dev.temper.model.SessionOpening
+import dev.temper.model.decideSessionOpening
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
@@ -103,9 +104,7 @@ class SessionViewModel(
                 return@launch
             }
             val planned = week.planned.firstOrNull { it.templateId == templateId && it.date == dateValue }
-            val existing = week.performed.firstOrNull {
-                it.date == dateValue && it.templateId == templateId && !it.id.isNullOrBlank()
-            }
+            val opening = decideSessionOpening(week.performed, dateValue, templateId)
             val names = exerciseList.associate { it.id to it.name }
             val views = template.exercises.sortedBy { it.position }.map { exercise ->
                 SessionExerciseView(
@@ -122,8 +121,8 @@ class SessionViewModel(
                     discipline = planned?.discipline ?: template.discipline,
                     target = planned?.target?.ifBlank { template.target } ?: template.target,
                     exercises = views,
-                    existingSessionId = existing?.id,
-                    existingRevision = existing?.revision ?: 0,
+                    existingSessionId = (opening as? SessionOpening.Continue)?.sessionId,
+                    existingRevision = (opening as? SessionOpening.Continue)?.revision ?: 0,
                 ),
             )
         }

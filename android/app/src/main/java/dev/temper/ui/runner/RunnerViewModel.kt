@@ -13,6 +13,8 @@ import dev.temper.intervals.SystemWallClock
 import dev.temper.model.CreateSessionRequest
 import dev.temper.model.PlanSession
 import dev.temper.model.SessionEnvelope
+import dev.temper.model.SessionOpening
+import dev.temper.model.decideSessionOpening
 import dev.temper.runner.RunnerStep
 import java.time.Instant
 import java.util.UUID
@@ -27,6 +29,8 @@ data class RunnerContent(
     val templateId: String,
     val planVersionId: Long,
     val steps: List<RunnerStep>,
+    val existingSessionId: String? = null,
+    val existingRevision: Long = 0,
 ) {
     val distanceRequired: Boolean get() = steps.any { it.isDistance }
 }
@@ -95,6 +99,18 @@ class RunnerViewModel(
                         mutableState.value = RunnerUiState.Empty
                         return@launch
                     }
+                    val week = when (val weekOutcome = container.api.week(config.endpoint, config.token, dateValue)) {
+                        is ReadOutcome.Success -> weekOutcome.value
+                        is ReadOutcome.Failure -> {
+                            mutableState.value = RunnerUiState.Error(
+                                message = weekOutcome.problem.message,
+                                retryable = weekOutcome.problem.kind == ProblemKind.Retryable || weekOutcome.problem.kind == ProblemKind.Unknown,
+                                requiresConfiguration = weekOutcome.problem.status == 401,
+                            )
+                            return@launch
+                        }
+                    }
+                    val opening = decideSessionOpening(week.performed, dateValue, templateId) as? SessionOpening.Continue
                     mutableState.value = RunnerUiState.Content(
                         RunnerContent(
                             target = template.target.ifBlank { "Intervals" },
@@ -102,6 +118,8 @@ class RunnerViewModel(
                             templateId = templateId,
                             planVersionId = planVersionId,
                             steps = steps,
+                            existingSessionId = opening?.sessionId,
+                            existingRevision = opening?.revision ?: 0,
                         ),
                     )
                 }
@@ -123,6 +141,11 @@ class RunnerViewModel(
         }
         if (mutableCreateState.value is WriteState.Sending) return
         if (container.runnerController.snapshot.value != null) return
+        val existingSessionId = content.existingSessionId
+        if (existingSessionId != null) {
+            prepareRun(content, existingSessionId, content.existingRevision)
+            return
+        }
         viewModelScope.launch {
             val existing = operation
             val current = existing?.state?.value
@@ -151,21 +174,25 @@ class RunnerViewModel(
             mutableCreateState.value = next.state.value
             val saved = next.state.value as? WriteState.Saved<SessionEnvelope> ?: return@launch
             val session = saved.value.session
-            container.runnerController.prepare(
-                RunnerLaunch(
-                    target = content.target,
-                    date = content.date,
-                    templateId = content.templateId,
-                    sessionId = session.id,
-                    sessionRevision = session.revision,
-                    startedAtMs = SystemWallClock.nowMs(),
-                    steps = content.steps,
-                    planVersionId = content.planVersionId,
-                ),
-            )
-            container.runnerReporter.reset()
-            container.startRunnerService()
+            prepareRun(content, session.id, session.revision)
         }
+    }
+
+    private fun prepareRun(content: RunnerContent, sessionId: String, revision: Long) {
+        container.runnerController.prepare(
+            RunnerLaunch(
+                target = content.target,
+                date = content.date,
+                templateId = content.templateId,
+                sessionId = sessionId,
+                sessionRevision = revision,
+                startedAtMs = SystemWallClock.nowMs(),
+                steps = content.steps,
+                planVersionId = content.planVersionId,
+            ),
+        )
+        container.runnerReporter.reset()
+        container.startRunnerService()
     }
 
     fun retryStart() {

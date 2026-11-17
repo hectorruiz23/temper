@@ -3,6 +3,7 @@ package dev.temper
 import dev.temper.model.WeekResponse
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -55,6 +56,63 @@ class WeekJsonTest {
 
         assertTrue(week.planned.isEmpty())
         assertTrue(week.days.isEmpty())
+        assertTrue(week.performed.isEmpty())
+    }
+
+    @Test
+    fun performedSessionsKeepTheirCompletenessAndEvidence() {
+        val body = """
+            {
+              "week_start":"2026-11-16",
+              "week_end":"2026-11-22",
+              "planned":[],
+              "performed":[
+                {"id":"session-1","date":"2026-11-17","template_id":"s1","discipline":"strength",
+                 "started_at":"2026-11-17T08:00:00Z","revision":2,"complete":true,
+                 "evidence":{"source":"reported","reported_completed_at":"2026-11-17T09:00:00Z"},
+                 "ignored":"new"},
+                {"id":"session-2","date":"2026-11-18","template_id":"s2","discipline":"strength",
+                 "started_at":"2026-11-18T08:00:00Z","revision":1,"complete":false,"evidence":null},
+                {"id":"session-3","date":"2026-11-19","template_id":"s3","discipline":"run",
+                 "started_at":"2026-11-19T08:00:00Z","revision":3,"complete":true,
+                 "evidence":{"source":"watch","workout_id":"workout-1"}}
+              ],
+              "days":[]
+            }
+        """.trimIndent()
+
+        val week = json.decodeFromString<WeekResponse>(body)
+
+        assertEquals(3, week.performed.size)
+        val complete = week.performed[0]
+        assertEquals("session-1", complete.id)
+        assertEquals("2026-11-17", complete.date)
+        assertEquals("s1", complete.templateId)
+        assertEquals("strength", complete.discipline)
+        assertEquals("2026-11-17T08:00:00Z", complete.startedAt)
+        assertEquals(2L, complete.revision)
+        assertTrue(complete.complete)
+        assertEquals("reported", complete.evidence?.source)
+        assertEquals("2026-11-17T09:00:00Z", complete.evidence?.reportedCompletedAt)
+        assertNull(complete.evidence?.workoutId)
+
+        val open = week.performed[1]
+        assertFalse(open.complete)
+        assertNull(open.evidence)
+
+        val watch = week.performed[2]
+        assertTrue(watch.complete)
+        assertEquals("watch", watch.evidence?.source)
+        assertEquals("workout-1", watch.evidence?.workoutId)
+        assertNull(watch.evidence?.reportedCompletedAt)
+    }
+
+    @Test
+    fun aPayloadWithoutPerformedDecodesToAnEmptyList() {
+        val week = json.decodeFromString<WeekResponse>(
+            """{"week_start":"2026-11-23","week_end":"2026-11-29","planned":[],"days":[]}""",
+        )
+
         assertTrue(week.performed.isEmpty())
     }
 }

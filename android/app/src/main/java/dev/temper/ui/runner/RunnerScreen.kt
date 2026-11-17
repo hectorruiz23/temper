@@ -339,7 +339,11 @@ private fun RunnerSummary(content: RunnerContent, create: WriteState<SessionEnve
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = "The steps are held in memory. Starting creates the session record, then the foreground service runs the clock until the finish.",
+                text = if (content.existingSessionId != null) {
+                    "The steps are held in memory. Starting continues the session already logged for this day, then the foreground service runs the clock until the finish."
+                } else {
+                    "The steps are held in memory. Starting creates the session record, then the foreground service runs the clock until the finish."
+                },
                 color = Ink,
                 style = MaterialTheme.typography.bodyMedium,
             )
