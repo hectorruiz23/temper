@@ -102,6 +102,15 @@ func (h *Handler) CheckIn(w nethttp.ResponseWriter, request *nethttp.Request) {
 	})
 }
 
+func (h *Handler) Discard(w nethttp.ResponseWriter, request *nethttp.Request) {
+	if err := h.service.DiscardSession(request.Context(), request.PathValue("id")); err != nil {
+		writeServiceError(w, err, nethttp.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(nethttp.StatusNoContent)
+}
+
 func (h *Handler) LogSets(w nethttp.ResponseWriter, request *nethttp.Request) {
 	body, err := readBody(request)
 	if err != nil {
@@ -231,7 +240,7 @@ func statusFor(code string) int {
 	switch code {
 	case "not_found":
 		return nethttp.StatusNotFound
-	case "revision_conflict", "workout_already_linked", "set_position_occupied", "session_exists", "idempotency_conflict":
+	case "revision_conflict", "workout_already_linked", "set_position_occupied", "session_exists", "idempotency_conflict", "session_has_sets", "session_complete":
 		return nethttp.StatusConflict
 	case "invalid_input", "idempotency_key_required":
 		return nethttp.StatusBadRequest

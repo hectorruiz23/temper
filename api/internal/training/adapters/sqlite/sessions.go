@@ -108,6 +108,29 @@ func (s *Store) SessionsBetween(ctx context.Context, startDate, endDate string) 
 	return sessions, nil
 }
 
+func (t *transaction) SetCount(ctx context.Context, sessionID string) (int, error) {
+	var count int
+	if err := t.query.QueryRowContext(ctx, `SELECT COUNT(*) FROM logged_set WHERE session_id = ?`, sessionID).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (t *transaction) DeleteSession(ctx context.Context, id string) error {
+	result, err := t.query.ExecContext(ctx, `DELETE FROM training_session WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return kernel.NewRuleError("not_found", "session not found")
+	}
+	return nil
+}
+
 func (t *transaction) UpdateSessionEvidence(ctx context.Context, id string, expectedRevision, nextRevision int64, watchWorkoutID *string, reportedCompletedAt *int64) error {
 	result, err := t.query.ExecContext(ctx, `UPDATE training_session
 		SET watch_workout_id = ?, reported_completed_at = ?, revision = ?
