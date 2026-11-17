@@ -13,6 +13,7 @@ const (
 
 type Session struct {
 	ID                  string  `json:"id"`
+	PlanVersionID       *int64  `json:"plan_version_id"`
 	TemplateID          *string `json:"template_id"`
 	Date                string  `json:"date"`
 	Discipline          string  `json:"discipline"`

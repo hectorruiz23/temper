@@ -82,6 +82,7 @@ func (s *Service) CreateSession(ctx context.Context, command CreateSessionComman
 	}
 
 	var result domain.Session
+	var sessionPlanVersion *int64
 	err = s.store.WithinTransaction(ctx, func(ctx context.Context, tx Transaction) error {
 		receipt, found, err := tx.FindReceipt(ctx, OperationCreateSession, command.IdempotencyKey)
 		if err != nil {
@@ -95,7 +96,7 @@ func (s *Service) CreateSession(ctx context.Context, command CreateSessionComman
 		}
 
 		if input.TemplateID != nil {
-			templateDiscipline, exists, err := tx.Template(ctx, *input.TemplateID)
+			templateDiscipline, planVersionID, exists, err := tx.Template(ctx, *input.TemplateID, input.Date)
 			if err != nil {
 				return err
 			}
@@ -105,17 +106,20 @@ func (s *Service) CreateSession(ctx context.Context, command CreateSessionComman
 			if err := domain.ValidateTemplateDiscipline(input.Discipline, templateDiscipline); err != nil {
 				return err
 			}
+			planVersion := planVersionID
+			sessionPlanVersion = &planVersion
 		}
 
 		session := domain.Session{
-			ID:         input.ID,
-			TemplateID: input.TemplateID,
-			Date:       input.Date,
-			Discipline: input.Discipline,
-			StartedAt:  input.StartedAt,
-			CreatedAt:  s.clock.Now().UnixMilli(),
-			Revision:   1,
-			Complete:   false,
+			ID:            input.ID,
+			PlanVersionID: sessionPlanVersion,
+			TemplateID:    input.TemplateID,
+			Date:          input.Date,
+			Discipline:    input.Discipline,
+			StartedAt:     input.StartedAt,
+			CreatedAt:     s.clock.Now().UnixMilli(),
+			Revision:      1,
+			Complete:      false,
 		}
 		if err := tx.CreateSession(ctx, session); err != nil {
 			return err
