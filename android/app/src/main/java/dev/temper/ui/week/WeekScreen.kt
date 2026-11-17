@@ -61,6 +61,7 @@ import java.util.Locale
 fun WeekScreen(
     container: AppContainer,
     onOpenSession: (String, String) -> Unit,
+    onOpenRunner: (String, String, Long) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val viewModel = viewModel<WeekViewModel>(factory = TemperSimpleFactory { WeekViewModel(container) })
@@ -74,6 +75,7 @@ fun WeekScreen(
     val today = content?.today ?: LocalDate.now()
     val todayPlanned = content?.week?.planned?.filter { it.date == today.toString() }.orEmpty()
     val firstStrength = todayPlanned.firstOrNull { it.discipline == "strength" }
+    val firstIntervals = todayPlanned.firstOrNull { it.discipline == "intervals" }
 
     TemperScaffold(
         topBar = {
@@ -91,8 +93,10 @@ fun WeekScreen(
                 is WeekUiState.Content -> {
                     if (firstStrength != null) {
                         RailHint("Today · ${firstStrength.target.ifBlank { "strength" }}", "plan v${firstStrength.planVersionId}")
+                    } else if (firstIntervals != null) {
+                        RailHint("Today · ${firstIntervals.target.ifBlank { "intervals" }}", "plan v${firstIntervals.planVersionId}")
                     } else if (todayPlanned.isNotEmpty()) {
-                        RailHint("Today · intervals", "runner arrives in M7b")
+                        RailHint("Today · ${todayPlanned.first().discipline}", "plan v${todayPlanned.first().planVersionId}")
                     } else {
                         RailHint("Today · rest", "nothing planned")
                     }
@@ -103,10 +107,11 @@ fun WeekScreen(
                     text = "Start session",
                     onClick = { onOpenSession(today.toString(), firstStrength.templateId) },
                 )
-                state is WeekUiState.Content && todayPlanned.isNotEmpty() -> QuietButton(
-                    text = "Interval runner is not in this build",
-                    onClick = {},
-                    enabled = false,
+                state is WeekUiState.Content && firstIntervals != null -> PrimaryButton(
+                    text = "Start intervals",
+                    onClick = {
+                        onOpenRunner(today.toString(), firstIntervals.templateId, firstIntervals.planVersionId)
+                    },
                 )
                 state is WeekUiState.Content -> PrimaryButton(text = "Check again", onClick = viewModel::load)
                 state is WeekUiState.NeedsConfiguration -> PrimaryButton(text = "Open Settings", onClick = onOpenSettings)
@@ -134,6 +139,7 @@ fun WeekScreen(
                 week = current.week,
                 today = current.today,
                 onOpenSession = onOpenSession,
+                onOpenRunner = onOpenRunner,
             )
         }
     }
@@ -144,6 +150,7 @@ private fun WeekContent(
     week: WeekResponse,
     today: LocalDate,
     onOpenSession: (String, String) -> Unit,
+    onOpenRunner: (String, String, Long) -> Unit,
 ) {
     val start = parseDate(week.weekStart) ?: today
     val days = (0..6).map { start.plusDays(it.toLong()) }
@@ -165,7 +172,13 @@ private fun WeekContent(
         items(days) { date ->
             val planned = week.planned.filter { it.date == date.toString() }
             if (date == today) {
-                TodayRow(date = date, planned = planned, performed = week.performed.any { it.date == date.toString() && it.complete }, onOpenSession = onOpenSession)
+                TodayRow(
+                    date = date,
+                    planned = planned,
+                    performed = week.performed.any { it.date == date.toString() && it.complete },
+                    onOpenSession = onOpenSession,
+                    onOpenRunner = onOpenRunner,
+                )
             } else {
                 DayRow(date = date, planned = planned, performed = week.performed.any { it.date == date.toString() && it.complete })
             }
@@ -232,6 +245,7 @@ private fun TodayRow(
     planned: List<PlannedSession>,
     performed: Boolean,
     onOpenSession: (String, String) -> Unit,
+    onOpenRunner: (String, String, Long) -> Unit,
 ) {
     Column(modifier = Modifier.padding(vertical = 6.dp)) {
         AccentBlock {
@@ -265,6 +279,14 @@ private fun TodayRow(
                 QuietButton(
                     text = "Open session",
                     onClick = { onOpenSession(date.toString(), strength.templateId) },
+                )
+            }
+            val intervals = planned.firstOrNull { it.discipline == "intervals" }
+            if (intervals != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                QuietButton(
+                    text = "Start intervals",
+                    onClick = { onOpenRunner(date.toString(), intervals.templateId, intervals.planVersionId) },
                 )
             }
         }

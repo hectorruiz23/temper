@@ -10,6 +10,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import dev.temper.AppContainer
 import dev.temper.ui.result.ResultScreen
+import dev.temper.ui.runner.RunnerScreen
 import dev.temper.ui.session.SessionScreen
 import dev.temper.ui.sets.SetsScreen
 import dev.temper.ui.settings.SettingsScreen
@@ -21,6 +22,7 @@ private object Routes {
     const val Session = "session/{date}/{templateId}"
     const val Sets = "sets/{sessionId}/{templateId}/{date}/{revision}"
     const val Result = "result/{sessionId}/{date}/{revision}"
+    const val Runner = "runner/{date}/{templateId}/{planVersionId}"
 
     fun session(date: String, templateId: String): String = "session/${Uri.encode(date)}/${Uri.encode(templateId)}"
 
@@ -29,6 +31,9 @@ private object Routes {
 
     fun result(sessionId: String, date: String, revision: Long): String =
         "result/${Uri.encode(sessionId)}/${Uri.encode(date)}/$revision"
+
+    fun runner(date: String, templateId: String, planVersionId: Long): String =
+        "runner/${Uri.encode(date)}/${Uri.encode(templateId)}/$planVersionId"
 }
 
 @Composable
@@ -43,7 +48,31 @@ fun TemperNavHost(container: AppContainer) {
             WeekScreen(
                 container = container,
                 onOpenSession = { date, templateId -> navController.navigate(Routes.session(date, templateId)) },
+                onOpenRunner = { date, templateId, planVersionId ->
+                    navController.navigate(Routes.runner(date, templateId, planVersionId))
+                },
                 onOpenSettings = { navController.navigate(Routes.Settings) { launchSingleTop = true } },
+            )
+        }
+        composable(
+            route = Routes.Runner,
+            arguments = listOf(
+                navArgument("date") { type = NavType.StringType },
+                navArgument("templateId") { type = NavType.StringType },
+                navArgument("planVersionId") { type = NavType.LongType },
+            ),
+        ) { entry ->
+            val date = Uri.decode(entry.arguments?.getString("date").orEmpty())
+            val templateId = Uri.decode(entry.arguments?.getString("templateId").orEmpty())
+            val planVersionId = entry.arguments?.getLong("planVersionId") ?: 0L
+            RunnerScreen(
+                container = container,
+                date = date,
+                templateId = templateId,
+                planVersionId = planVersionId,
+                onBack = { navController.popBackStack() },
+                onOpenSettings = { navController.navigate(Routes.Settings) { launchSingleTop = true } },
+                onDone = { navController.popBackStack(Routes.Week, inclusive = false) },
             )
         }
         composable(Routes.Settings) {
