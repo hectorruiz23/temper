@@ -63,7 +63,12 @@ func (s *Service) GetDay(ctx context.Context, date string) (domain.Day, error) {
 	if err := domain.ValidateDate(date); err != nil {
 		return domain.Day{}, err
 	}
-	return s.store.GetDay(ctx, date)
+	day, err := s.store.GetDay(ctx, date)
+	if err != nil {
+		return domain.Day{}, err
+	}
+	domain.DeriveWorkoutPace(day.Workouts)
+	return day, nil
 }
 
 func (s *Service) UpsertDay(ctx context.Context, command UpsertDayCommand) (domain.Day, error) {

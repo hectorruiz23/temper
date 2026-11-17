@@ -6,11 +6,13 @@ import dev.temper.AppContainer
 import dev.temper.api.PendingOperation
 import dev.temper.api.ProblemKind
 import dev.temper.api.ReadOutcome
+import dev.temper.api.SendOutcome
 import dev.temper.api.TemperJson
 import dev.temper.api.WriteState
 import dev.temper.model.LogSet
 import dev.temper.model.LogSetsRequest
 import dev.temper.model.PlanExercise
+import dev.temper.model.PlanSession
 import dev.temper.model.SetsEnvelope
 import java.time.LocalDate
 import java.util.UUID
@@ -51,6 +53,9 @@ class SetsViewModel(
     private val mutableWriteState = MutableStateFlow<WriteState<SetsEnvelope>>(WriteState.Idle)
     val writeState: StateFlow<WriteState<SetsEnvelope>> = mutableWriteState.asStateFlow()
 
+    private val mutableDiscardState = MutableStateFlow<WriteState<Unit>>(WriteState.Idle)
+    val discardState: StateFlow<WriteState<Unit>> = mutableDiscardState.asStateFlow()
+
     private var operation: PendingOperation<SetsEnvelope>? = null
 
     init {
@@ -79,8 +84,16 @@ class SetsViewModel(
                     return@launch
                 }
             }
-            val template = plan.sessions.firstOrNull { it.id == templateId }
-            if (template == null || template.exercises.isEmpty()) {
+            val template = SessionTemplateLookup.inPlan(plan.sessions, templateId)
+                ?: SessionTemplateLookup.inPlan(fallbackSessions(config.endpoint, config.token), templateId)
+            if (template == null) {
+                mutableState.value = SetsUiState.Error(
+                    message = SessionTemplateLookup.missingMessage(templateId, dateValue),
+                    retryable = false,
+                )
+                return@launch
+            }
+            if (template.exercises.isEmpty()) {
                 mutableState.value = SetsUiState.Empty
                 return@launch
             }
@@ -145,7 +158,14 @@ class SetsViewModel(
             )
             operation = next
             mutableWriteState.value = WriteState.Sending
-            if (reuse) next.retry() else next.submit()
+            try {
+                if (reuse) next.retry() else next.submit()
+            } catch (error: Throwable) {
+                mutableWriteState.value = WriteState.Retryable(
+                    error.message ?: "The sets could not be sent. Check the connection and try again.",
+                )
+                return@launch
+            }
             mutableWriteState.value = next.state.value
         }
     }
@@ -187,6 +207,41 @@ class SetsViewModel(
             )
         }
         return ParsedRows(sets = sets)
+    }
+
+    fun discard() {
+        val config = container.configuration.value
+        if (config == null) {
+            mutableDiscardState.value = WriteState.Rejected(401, null, "Configure the server first.")
+            return
+        }
+        if (mutableDiscardState.value is WriteState.Sending) return
+        viewModelScope.launch {
+            mutableDiscardState.value = WriteState.Sending
+            mutableDiscardState.value = try {
+                when (val outcome = container.api.discardSession(config.endpoint, config.token, sessionId)) {
+                    is SendOutcome.Success -> WriteState.Saved(Unit)
+                    is SendOutcome.Retryable -> WriteState.Retryable(outcome.reason)
+                    is SendOutcome.Unknown -> WriteState.UnknownOutcome(outcome.reason)
+                    is SendOutcome.Rejected -> WriteState.Rejected(outcome.status, outcome.code, outcome.message)
+                }
+            } catch (error: Throwable) {
+                WriteState.Retryable(error.message ?: "The session could not be discarded.")
+            }
+        }
+    }
+
+    private suspend fun fallbackSessions(endpoint: String, token: String): List<PlanSession> {
+        val planned = when (val outcome = container.api.week(endpoint, token, dateValue)) {
+            is ReadOutcome.Success -> outcome.value.planned
+            is ReadOutcome.Failure -> return emptyList()
+        }
+        val versionId = planned.firstOrNull { it.templateId == templateId }?.planVersionId ?: return emptyList()
+        if (versionId <= 0L) return emptyList()
+        return when (val outcome = container.api.plan(endpoint, token, versionId)) {
+            is ReadOutcome.Success -> outcome.value.plan.sessions
+            is ReadOutcome.Failure -> emptyList()
+        }
     }
 
     private fun error(message: String, kind: ProblemKind, status: Int?): SetsUiState =

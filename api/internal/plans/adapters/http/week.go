@@ -101,6 +101,7 @@ func (h *WeekHandler) Get(w nethttp.ResponseWriter, request *nethttp.Request) {
 			Steps:        day.Steps,
 			RestingHRBPM: day.RestingHRBPM,
 			HRVRMSSDMS:   day.HRVRMSSDMS,
+			Workouts:     workoutsResponse(day.Workouts),
 		})
 	}
 
@@ -246,10 +247,80 @@ type plannedEntry struct {
 }
 
 type weekDayResponse struct {
-	Date         string   `json:"date"`
-	Revision     int64    `json:"revision"`
-	SleepMS      *int64   `json:"sleep_ms"`
-	Steps        *int64   `json:"steps"`
-	RestingHRBPM *int64   `json:"resting_hr_bpm"`
-	HRVRMSSDMS   *float64 `json:"hrv_rmssd_ms"`
+	Date         string            `json:"date"`
+	Revision     int64             `json:"revision"`
+	SleepMS      *int64            `json:"sleep_ms"`
+	Steps        *int64            `json:"steps"`
+	RestingHRBPM *int64            `json:"resting_hr_bpm"`
+	HRVRMSSDMS   *float64          `json:"hrv_rmssd_ms"`
+	Workouts     []workoutResponse `json:"workouts"`
+}
+
+type workoutResponse struct {
+	ID             string          `json:"id"`
+	Origin         string          `json:"origin"`
+	ExternalID     string          `json:"external_id"`
+	DeviceKind     *string         `json:"device_kind"`
+	StartedAt      int64           `json:"started_at"`
+	EndedAt        int64           `json:"ended_at"`
+	Discipline     string          `json:"discipline"`
+	DurationMS     int64           `json:"duration_ms"`
+	DistanceM      *float64        `json:"distance_m"`
+	AvgHRBPM       *int64          `json:"avg_hr_bpm"`
+	MaxHRBPM       *int64          `json:"max_hr_bpm"`
+	CaloriesKcal   *float64        `json:"calories_kcal"`
+	CadenceSPM     *float64        `json:"cadence_spm"`
+	ElevationGainM *float64        `json:"elevation_gain_m"`
+	PaceSecPerKM   *float64        `json:"pace_sec_per_km"`
+	WatchVerified  bool            `json:"watch_verified"`
+	Splits         []splitResponse `json:"splits"`
+}
+
+type splitResponse struct {
+	Position     int      `json:"position"`
+	Kind         *string  `json:"kind"`
+	DistanceM    *float64 `json:"distance_m"`
+	DurationMS   *int64   `json:"duration_ms"`
+	AvgHRBPM     *int64   `json:"avg_hr_bpm"`
+	PaceSecPerKM *float64 `json:"pace_sec_per_km"`
+}
+
+func workoutsResponse(workouts []healthdomain.Workout) []workoutResponse {
+	present := make([]workoutResponse, 0, len(workouts))
+	for _, workout := range workouts {
+		if !workout.Present {
+			continue
+		}
+		splits := make([]splitResponse, 0, len(workout.Splits))
+		for _, split := range workout.Splits {
+			splits = append(splits, splitResponse{
+				Position:     split.Position,
+				Kind:         split.Kind,
+				DistanceM:    split.DistanceM,
+				DurationMS:   split.DurationMS,
+				AvgHRBPM:     split.AvgHRBPM,
+				PaceSecPerKM: split.PaceSecPerKM,
+			})
+		}
+		present = append(present, workoutResponse{
+			ID:             workout.ID,
+			Origin:         workout.Origin,
+			ExternalID:     workout.ExternalID,
+			DeviceKind:     workout.DeviceKind,
+			StartedAt:      workout.StartedAt,
+			EndedAt:        workout.EndedAt,
+			Discipline:     workout.Discipline,
+			DurationMS:     workout.DurationMS,
+			DistanceM:      workout.DistanceM,
+			AvgHRBPM:       workout.AvgHRBPM,
+			MaxHRBPM:       workout.MaxHRBPM,
+			CaloriesKcal:   workout.CaloriesKcal,
+			CadenceSPM:     workout.CadenceSPM,
+			ElevationGainM: workout.ElevationGainM,
+			PaceSecPerKM:   workout.PaceSecPerKM,
+			WatchVerified:  workout.WatchVerified,
+			Splits:         splits,
+		})
+	}
+	return present
 }

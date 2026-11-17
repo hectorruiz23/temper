@@ -29,6 +29,8 @@ type Transaction interface {
 	Template(ctx context.Context, id, date string) (string, int64, bool, error)
 	CreateSession(ctx context.Context, session domain.Session) error
 	Session(ctx context.Context, id string) (domain.Session, error)
+	SetCount(ctx context.Context, sessionID string) (int, error)
+	DeleteSession(ctx context.Context, id string) error
 	UpdateSessionEvidence(ctx context.Context, id string, expectedRevision, nextRevision int64, watchWorkoutID *string, reportedCompletedAt *int64) error
 	Workout(ctx context.Context, id string) (*domain.Workout, error)
 	ExerciseExists(ctx context.Context, id string) (bool, error)

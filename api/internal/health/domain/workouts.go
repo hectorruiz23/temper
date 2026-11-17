@@ -9,6 +9,7 @@ func ReconcileWorkouts(existing, incoming []Workout) ([]Workout, error) {
 	if err := validateWorkouts(incoming); err != nil {
 		return nil, err
 	}
+	DeriveWorkoutPace(incoming)
 
 	previousByKey := make(map[string]Workout, len(existing))
 	for _, workout := range existing {

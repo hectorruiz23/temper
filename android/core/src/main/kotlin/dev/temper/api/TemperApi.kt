@@ -16,6 +16,7 @@ import io.ktor.client.network.sockets.SocketTimeoutException
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -119,6 +120,40 @@ class TemperApi {
                 ),
             )
         }
+    }
+
+    suspend fun discardSession(endpoint: String, token: String, sessionId: String): SendOutcome =
+        discard(endpoint, token, "/api/sessions/$sessionId")
+
+    private suspend fun discard(endpoint: String, token: String, path: String): SendOutcome {
+        val url = endpoint.trimEnd('/') + path
+        val response = try {
+            client.delete(url) {
+                header("X-Temper-Token", token)
+            }
+        } catch (error: Throwable) {
+            val problem = problemFor(error, reading = false)
+            return when (problem.kind) {
+                ProblemKind.Retryable -> SendOutcome.Retryable(problem.message)
+                else -> SendOutcome.Unknown(problem.message)
+            }
+        }
+        val status = response.status
+        val text = try {
+            response.bodyAsText()
+        } catch (error: Throwable) {
+            val problem = problemFor(error, reading = false)
+            return when (problem.kind) {
+                ProblemKind.Retryable -> SendOutcome.Retryable(problem.message)
+                else -> SendOutcome.Unknown(problem.message)
+            }
+        }
+        if (status.value in 200..299) return SendOutcome.Success(status.value, text)
+        if (status.value == HttpStatusCode.ServiceUnavailable.value) {
+            return SendOutcome.Retryable("The server is unavailable right now.")
+        }
+        val problem = problemFromStatus(status.value, text)
+        return SendOutcome.Rejected(status.value, problem.code, problem.message)
     }
 
     private suspend fun send(endpoint: String, token: String, path: String, key: String, body: String): SendOutcome {

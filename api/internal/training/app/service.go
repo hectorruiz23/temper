@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 
 	"github.com/hectorruiz23/temper/api/internal/kernel"
 	"github.com/hectorruiz23/temper/api/internal/training/domain"
@@ -141,6 +142,32 @@ func (s *Service) CreateSession(ctx context.Context, command CreateSessionComman
 	}
 
 	return result, nil
+}
+
+func (s *Service) DiscardSession(ctx context.Context, id string) error {
+	if len(strings.TrimSpace(id)) == 0 {
+		return kernel.NewRuleError("invalid_input", "session id is required")
+	}
+
+	return s.store.WithinTransaction(ctx, func(ctx context.Context, tx Transaction) error {
+		session, err := tx.Session(ctx, id)
+		if err != nil {
+			return err
+		}
+		if session.Complete {
+			return kernel.NewRuleError("session_complete", "a completed session cannot be discarded")
+		}
+
+		sets, err := tx.SetCount(ctx, id)
+		if err != nil {
+			return err
+		}
+		if sets > 0 {
+			return kernel.NewRuleError("session_has_sets", "a session with logged sets cannot be discarded")
+		}
+
+		return tx.DeleteSession(ctx, id)
+	})
 }
 
 func (s *Service) CheckIn(ctx context.Context, command CheckInCommand) (CheckInResult, error) {

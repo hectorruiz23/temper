@@ -32,17 +32,33 @@ type SleepStage struct {
 }
 
 type Workout struct {
-	ID            string
-	Origin        string
-	ExternalID    string
-	DeviceKind    *string
-	StartedAt     int64
-	EndedAt       int64
-	Discipline    string
-	DurationMS    int64
-	DistanceM     *float64
-	WatchVerified bool
-	Present       bool
+	ID             string
+	Origin         string
+	ExternalID     string
+	DeviceKind     *string
+	StartedAt      int64
+	EndedAt        int64
+	Discipline     string
+	DurationMS     int64
+	DistanceM      *float64
+	AvgHRBPM       *int64
+	MaxHRBPM       *int64
+	CaloriesKcal   *float64
+	CadenceSPM     *float64
+	ElevationGainM *float64
+	PaceSecPerKM   *float64
+	WatchVerified  bool
+	Present        bool
+	Splits         []WorkoutSplit
+}
+
+type WorkoutSplit struct {
+	Position     int
+	Kind         *string
+	DistanceM    *float64
+	DurationMS   *int64
+	AvgHRBPM     *int64
+	PaceSecPerKM *float64
 }
 
 type Day struct {
