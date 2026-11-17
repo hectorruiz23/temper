@@ -34,15 +34,14 @@ sealed interface HealthPhase {
     data class RequestingPermissions(val missing: List<HealthPermission>) : HealthPhase
     data class Unavailable(val availability: HealthAvailability) : HealthPhase
     data class PermissionsDenied(val missing: List<HealthPermission>, val revoked: Boolean) : HealthPhase
-    data class NoData(val date: LocalDate) : HealthPhase
-    data class Uploaded(val date: LocalDate, val revision: Long, val unchanged: Boolean) : HealthPhase
+    data class NoData(val dates: List<LocalDate>) : HealthPhase
+    data class Uploaded(val synced: Int, val missing: List<LocalDate>) : HealthPhase
     data class Failed(val message: String, val retryable: Boolean, val requiresConfiguration: Boolean = false) : HealthPhase
 }
 
 data class HealthUiState(
     val phase: HealthPhase = HealthPhase.Idle,
     val lastSyncAt: Instant? = null,
-    val snapshot: HealthDaySnapshot? = null,
     val permission: HealthPermissionState = HealthPermissionState.Unknown,
     val granted: Set<HealthPermission> = emptySet(),
     val missing: Set<HealthPermission> = emptySet(),
@@ -149,47 +148,49 @@ class HealthSyncController(
             return
         }
 
-        update(base)
+        update(base.copy(phase = HealthPhase.Syncing))
 
         val today = LocalDate.now(zone)
-        val records = runCatching { reader.read(today, zone, granted) }
-            .getOrElse {
-                finish(
-                    base.copy(
-                        phase = HealthPhase.Failed(
-                            "Health Connect could not be read: ${it.message ?: "unknown error"}.",
-                            retryable = true,
-                        ),
-                    ),
-                )
-                return
-            }
-        val snapshot = HealthDayAggregator.aggregate(records, today, zone)
+        val syncedDays = mutableListOf<LocalDate>()
+        val missingDays = mutableListOf<LocalDate>()
 
-        if (!snapshot.hasData) {
-            finish(base.copy(phase = HealthPhase.NoData(today), snapshot = null))
-            return
+        for (day in lastSevenDays(today)) {
+            val records = runCatching { reader.read(day, zone, granted) }
+                .getOrElse {
+                    finish(
+                        base.copy(
+                            phase = HealthPhase.Failed(
+                                "Health Connect could not be read: ${it.message ?: "unknown error"}.",
+                                retryable = true,
+                            ),
+                        ),
+                    )
+                    return
+                }
+            val snapshot = HealthDayAggregator.aggregate(records, day, zone)
+            if (!snapshot.hasData) {
+                missingDays += day
+                continue
+            }
+            when (val result = upload(config, snapshot, granted)) {
+                is UploadResult.Current, is UploadResult.Saved -> syncedDays += day
+                is UploadResult.Failure -> {
+                    finish(
+                        base.copy(
+                            phase = HealthPhase.Failed(result.message, result.retryable, result.requiresConfiguration),
+                        ),
+                    )
+                    return
+                }
+            }
         }
 
-        val uploading = base.copy(phase = HealthPhase.Syncing, snapshot = snapshot)
-        update(uploading)
-
-        when (val result = upload(config, snapshot, granted)) {
-            is UploadResult.Current -> finish(
-                uploading.copy(
-                    phase = HealthPhase.Uploaded(snapshot.date, result.revision, unchanged = true),
-                    lastSyncAt = Instant.now(),
-                ),
-            )
-            is UploadResult.Saved -> finish(
-                uploading.copy(
-                    phase = HealthPhase.Uploaded(snapshot.date, result.revision, unchanged = false),
-                    lastSyncAt = Instant.now(),
-                ),
-            )
-            is UploadResult.Failure -> finish(
-                uploading.copy(
-                    phase = HealthPhase.Failed(result.message, result.retryable, result.requiresConfiguration),
+        if (syncedDays.isEmpty()) {
+            finish(base.copy(phase = HealthPhase.NoData(missingDays.sorted())))
+        } else {
+            finish(
+                base.copy(
+                    phase = HealthPhase.Uploaded(synced = syncedDays.size, missing = missingDays.sorted()),
                 ),
             )
         }

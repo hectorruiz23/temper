@@ -56,10 +56,22 @@ fun SessionScreen(
     val state by viewModel.state.collectAsState()
     val write by viewModel.writeState.collectAsState()
     val content = (state as? SessionUiState.Content)?.content
+    val savedSession = (write as? WriteState.Saved<SessionEnvelope>)?.value?.session
 
     LaunchedEffect(write) {
         val saved = write as? WriteState.Saved<SessionEnvelope>
         if (saved != null) onStarted(saved.value.session.id, saved.value.session.revision)
+    }
+
+    val openSession: () -> Unit = {
+        val current = content
+        val existingId = current?.existingSessionId ?: savedSession?.id
+        if (existingId != null) {
+            val revision = if (current?.existingSessionId != null) current.existingRevision else savedSession?.revision ?: 0L
+            onStarted(existingId, revision)
+        } else {
+            viewModel.start()
+        }
     }
 
     TemperScaffold(
@@ -74,20 +86,23 @@ fun SessionScreen(
             when {
                 content != null && write is WriteState.Sending -> {
                     RailHint("Creating the session", "in flight")
-                    PrimaryButton(text = "Starting…", onClick = {}, enabled = false)
+                    PrimaryButton(text = "Opening…", onClick = {}, enabled = false)
                 }
                 content != null && (write is WriteState.Retryable || write is WriteState.UnknownOutcome) -> {
                     RailHint("Not started", "retry uses the same key")
-                    PrimaryButton(text = "Retry start", onClick = viewModel::retry)
+                    PrimaryButton(text = "Retry open", onClick = viewModel::retry)
                 }
                 content != null && write is WriteState.Rejected -> {
                     RailHint("Rejected by the server", null)
-                    PrimaryButton(text = "Start session", onClick = viewModel::start)
+                    PrimaryButton(text = "Open session", onClick = openSession)
                     QuietButton(text = "Open Settings", onClick = onOpenSettings)
                 }
                 content != null -> {
-                    RailHint("${content.exercises.size} exercises", "session not created")
-                    PrimaryButton(text = "Start session", onClick = viewModel::start)
+                    RailHint(
+                        "${content.exercises.size} exercises",
+                        if (content.existingSessionId != null || savedSession != null) "session exists" else "session not created",
+                    )
+                    PrimaryButton(text = "Open session", onClick = openSession)
                 }
                 state is SessionUiState.NeedsConfiguration -> {
                     RailHint("No configuration", null)
@@ -103,7 +118,7 @@ fun SessionScreen(
             is SessionUiState.NeedsConfiguration -> EmptyPane(
                 eyebrow = "Configuration",
                 title = "No server yet",
-                detail = "Open Settings before starting a session.",
+                detail = "Open Settings before opening a session.",
                 action = "Open Settings",
                 onAction = onOpenSettings,
             )
@@ -172,14 +187,19 @@ private fun SessionContentPane(content: SessionContent, write: WriteState<Sessio
         item {
             Spacer(modifier = Modifier.height(12.dp))
             AccentBlock {
-                Eyebrow(if (write is WriteState.Saved) "Ready" else "Before you start")
+                val ready = write is WriteState.Saved || content.existingSessionId != null
+                Eyebrow(if (ready) "Ready" else "Before you start")
                 Text(
-                    text = if (write is WriteState.Saved) "Session created" else "Start session creates the record",
+                    text = if (ready) "Session ready" else "Open session creates the record",
                     color = Ink,
                     style = MaterialTheme.typography.headlineMedium,
                 )
                 Text(
-                    text = "The session is created before the first set. Only the check-in marks it complete.",
+                    text = if (ready) {
+                        "Opening continues to the existing session and its set logging."
+                    } else {
+                        "The session is created before the first set. Only the check-in marks it complete."
+                    },
                     color = Ink,
                     style = MaterialTheme.typography.bodyMedium,
                 )

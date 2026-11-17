@@ -21,19 +21,17 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import dev.temper.AppContainer
 import dev.temper.health.HealthAvailability
-import dev.temper.health.HealthDaySnapshot
 import dev.temper.health.HealthPermission
 import dev.temper.health.HealthPermissionState
 import dev.temper.health.HealthPhase
 import dev.temper.health.HealthUiState
+import dev.temper.health.healthDaysLabel
 import dev.temper.ui.components.Eyebrow
 import dev.temper.ui.components.SmallTextButton
 import dev.temper.ui.components.SyncStrip
-import dev.temper.ui.formatSleep
 import dev.temper.ui.theme.Ink
 import dev.temper.ui.theme.Panel
 import dev.temper.ui.theme.PaperSoft
-import java.math.BigDecimal
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -105,13 +103,18 @@ private fun HealthSyncContent(
             )
             is HealthPhase.NoData -> SyncStrip(
                 mark = "·",
-                title = "No health data for ${phase.date}",
-                detail = "Health Connect is available and the permissions are granted, but no records exist for today. Nothing was uploaded.",
+                title = "No health data in the last seven days",
+                detail = "${healthDaysLabel(phase.dates)} had no data. Nothing was uploaded.",
             )
             is HealthPhase.Uploaded -> SyncStrip(
                 mark = "✓",
-                title = if (phase.unchanged) "The day is already current" else "Day uploaded",
-                detail = "Revision ${phase.revision} · ${shortTime(state.lastSyncAt?.toEpochMilli(), state.zone)}",
+                title = buildString {
+                    append("Synced ${phase.synced} ${if (phase.synced == 1) "day" else "days"}")
+                    if (phase.missing.isNotEmpty()) {
+                        append(" (${healthDaysLabel(phase.missing)} had no data)")
+                    }
+                },
+                detail = "Today and the six days before it were read from Health Connect.",
             )
             HealthPhase.Checking -> SyncStrip(
                 mark = "…",
@@ -121,8 +124,8 @@ private fun HealthSyncContent(
             )
             HealthPhase.Syncing -> SyncStrip(
                 mark = "…",
-                title = "Uploading today's snapshot",
-                detail = "Reading the source records and posting the day.",
+                title = "Syncing the last seven days",
+                detail = "Reading Health Connect and posting each day that has data.",
                 dashed = true,
             )
             is HealthPhase.RequestingPermissions -> SyncStrip(
@@ -132,18 +135,13 @@ private fun HealthSyncContent(
                 dashed = true,
             )
             HealthPhase.Idle -> Text(
-                text = "Reads today's records when you sync or return to the app. Nothing is scheduled and no health data is stored on this phone.",
+                text = "Reads the last seven days when you sync. Nothing is scheduled and no health data is stored on this phone.",
                 color = Ink,
                 style = MaterialTheme.typography.labelMedium,
             )
         }
 
         PermissionRows(state)
-
-        val snapshot = state.snapshot
-        if (snapshot != null) {
-            FoundSummary(snapshot)
-        }
 
         if (state.lastSyncAt != null) {
             Text(
@@ -200,40 +198,12 @@ private fun PermissionRows(state: HealthUiState) {
     }
 }
 
-@Composable
-private fun FoundSummary(snapshot: HealthDaySnapshot) {
-    Text(
-        text = "Sleep ${formatSleep(snapshot.sleepMs)} · Steps ${snapshot.steps ?: "—"}",
-        color = Ink,
-        style = MaterialTheme.typography.bodyMedium,
-    )
-    Text(
-        text = "Resting HR ${snapshot.restingHrBpm ?: "—"} · HRV ${formatDecimal(snapshot.hrvRmssdMs)} ms",
-        color = Ink,
-        style = MaterialTheme.typography.bodyMedium,
-    )
-    Text(
-        text = if (snapshot.workouts.isEmpty()) {
-            "No workouts in Health Connect for this day"
-        } else {
-            "${snapshot.workouts.size} workout${if (snapshot.workouts.size == 1) "" else "s"} · ${snapshot.workouts.joinToString(", ") { it.discipline }}"
-        },
-        color = Panel,
-        style = MaterialTheme.typography.labelMedium,
-    )
-}
-
 private fun missingDetail(missing: List<HealthPermission>): String =
     if (missing.isEmpty()) {
         "Health Connect did not grant the read permissions."
     } else {
         "${missing.joinToString(", ") { it.label }} will not be sent. Everything else keeps working."
     }
-
-private fun formatDecimal(value: Double?): String {
-    if (value == null) return "—"
-    return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString()
-}
 
 private fun shortTime(epochMillis: Long?, zone: ZoneId): String {
     if (epochMillis == null) return "—"

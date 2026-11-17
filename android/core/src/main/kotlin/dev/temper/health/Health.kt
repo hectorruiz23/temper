@@ -3,6 +3,8 @@ package dev.temper.health
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.TextStyle
+import java.util.Locale
 
 enum class HealthAvailability {
     Available,
@@ -125,3 +127,14 @@ interface HealthReader {
 }
 
 fun healthDayKey(date: LocalDate, revision: Long): String = "day-$date-$revision"
+
+fun lastSevenDays(today: LocalDate): List<LocalDate> = List(7) { today.minusDays(it.toLong()) }
+
+fun healthDaysLabel(days: List<LocalDate>): String =
+    days.sorted()
+        .groupBy { it.month }
+        .entries
+        .joinToString(", ") { (month, dates) ->
+            dates.joinToString(", ") { it.dayOfMonth.toString() } + " " +
+                month.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
+        }
