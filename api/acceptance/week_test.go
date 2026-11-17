@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -77,6 +78,21 @@ type weekResponse struct {
 		RestingHRBPM *int64   `json:"resting_hr_bpm"`
 		HRVRMSSDMS   *float64 `json:"hrv_rmssd_ms"`
 	} `json:"days"`
+}
+
+type weekPerformedEntry struct {
+	ID         string  `json:"id"`
+	Date       string  `json:"date"`
+	TemplateID *string `json:"template_id"`
+	Discipline string  `json:"discipline"`
+	StartedAt  *string `json:"started_at"`
+	Revision   int64   `json:"revision"`
+	Complete   bool    `json:"complete"`
+	Evidence   *struct {
+		Source              string  `json:"source"`
+		WorkoutID           *string `json:"workout_id"`
+		ReportedCompletedAt *string `json:"reported_completed_at"`
+	} `json:"evidence"`
 }
 
 func weekPost(t *testing.T, url, token, key, body string) (int, string) {
@@ -269,6 +285,55 @@ func TestWeekViewOverHTTP(t *testing.T) {
 	day := crossYear.Days[0]
 	if day.Date != "2026-12-30" || day.Revision != 1 || day.SleepMS == nil || *day.SleepMS != 25200000 || day.Steps == nil || *day.Steps != 8000 || day.RestingHRBPM == nil || *day.RestingHRBPM != 52 || day.HRVRMSSDMS != nil {
 		t.Fatalf("week day = %+v", day)
+	}
+
+	sessionBody := `{"id":"session-strength-1","template_id":"strength-v1","date":"2026-12-30","discipline":"strength","started_at":"2026-12-30T08:00:00Z"}`
+	status, response = weekPost(t, baseURL+"/api/sessions", token, "week-session-1", sessionBody)
+	if status != http.StatusCreated {
+		t.Fatalf("create week session = %d %s, want 201", status, response)
+	}
+
+	setsBody := `{"session_id":"session-strength-1","sets":[{"exercise_id":"goblet-squat","set_index":1,"kg":20,"reps":10}]}`
+	status, response = weekPost(t, baseURL+"/api/sets", token, "week-set-1", setsBody)
+	if status != http.StatusCreated {
+		t.Fatalf("log week set = %d %s, want 201", status, response)
+	}
+
+	checkInBody := `{"expected_revision":1,"reported_completed_at":"2026-12-30T09:00:00Z"}`
+	status, response = weekPost(t, baseURL+"/api/sessions/session-strength-1/check-in", token, "", checkInBody)
+	if status != http.StatusOK {
+		t.Fatalf("check in week session = %d %s, want 200", status, response)
+	}
+
+	status, response = request(t, baseURL+"/api/week/2026-12-31", token)
+	if status != http.StatusOK {
+		t.Fatalf("week with performed session = %d %s, want 200", status, response)
+	}
+	performedWeek := decodeWeek(t, response)
+	if !reflect.DeepEqual(performedWeek.Planned, crossYear.Planned) {
+		t.Fatalf("planned changed after sessions: %+v, want %+v", performedWeek.Planned, crossYear.Planned)
+	}
+	if len(performedWeek.Performed) != 1 {
+		t.Fatalf("performed = %+v, want one entry", performedWeek.Performed)
+	}
+	var performed weekPerformedEntry
+	if err := json.Unmarshal(performedWeek.Performed[0], &performed); err != nil {
+		t.Fatalf("decode performed entry: %v", err)
+	}
+	if performed.ID != "session-strength-1" || performed.Date != "2026-12-30" || performed.Discipline != "strength" {
+		t.Fatalf("performed entry = %+v", performed)
+	}
+	if performed.TemplateID == nil || *performed.TemplateID != "strength-v1" || performed.StartedAt == nil || *performed.StartedAt != "2026-12-30T08:00:00Z" {
+		t.Fatalf("performed metadata = %+v", performed)
+	}
+	if performed.Revision != 2 || !performed.Complete {
+		t.Fatalf("performed completion = %+v", performed)
+	}
+	if performed.Evidence == nil || performed.Evidence.Source != "reported" || performed.Evidence.ReportedCompletedAt == nil || *performed.Evidence.ReportedCompletedAt != "2026-12-30T09:00:00Z" {
+		t.Fatalf("performed evidence = %+v", performed.Evidence)
+	}
+	if performed.Evidence.WorkoutID != nil {
+		t.Fatalf("reported evidence carries workout id: %+v", performed.Evidence)
 	}
 
 	status, response = request(t, baseURL+"/api/week/2027-01-08", token)

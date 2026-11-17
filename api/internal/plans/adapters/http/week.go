@@ -12,17 +12,20 @@ import (
 	plansapp "github.com/hectorruiz23/temper/api/internal/plans/app"
 	"github.com/hectorruiz23/temper/api/internal/plans/domain"
 	"github.com/hectorruiz23/temper/api/internal/platform/httpserver"
+	trainingapp "github.com/hectorruiz23/temper/api/internal/training/app"
+	trainingdomain "github.com/hectorruiz23/temper/api/internal/training/domain"
 )
 
 var errInvalidDate = errors.New("invalid date")
 
 type WeekHandler struct {
-	plans  *plansapp.PlanService
-	health *app.Service
+	plans    *plansapp.PlanService
+	health   *app.Service
+	training *trainingapp.Service
 }
 
-func NewWeekHandler(plans *plansapp.PlanService, health *app.Service) *WeekHandler {
-	return &WeekHandler{plans: plans, health: health}
+func NewWeekHandler(plans *plansapp.PlanService, health *app.Service, training *trainingapp.Service) *WeekHandler {
+	return &WeekHandler{plans: plans, health: health, training: training}
 }
 
 func (h *WeekHandler) Get(w nethttp.ResponseWriter, request *nethttp.Request) {
@@ -70,6 +73,16 @@ func (h *WeekHandler) Get(w nethttp.ResponseWriter, request *nethttp.Request) {
 		planned = append(planned, expandDay(dayPlan, dayDate, offset+1)...)
 	}
 
+	sessions, err := h.training.SessionsBetween(request.Context(), weekStart, weekEnd)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	performed := make([]performedEntry, 0, len(sessions))
+	for _, session := range sessions {
+		performed = append(performed, performedEntryFrom(session))
+	}
+
 	days := make([]weekDayResponse, 0, 7)
 	for offset := 0; offset < 7; offset++ {
 		dayDate := dateInLocation(monday, location).AddDate(0, 0, offset).Format("2006-01-02")
@@ -95,7 +108,7 @@ func (h *WeekHandler) Get(w nethttp.ResponseWriter, request *nethttp.Request) {
 		WeekStart: weekStart,
 		WeekEnd:   weekEnd,
 		Planned:   planned,
-		Performed: make([]struct{}, 0),
+		Performed: performed,
 		Days:      days,
 	})
 }
@@ -171,8 +184,57 @@ type weekResponse struct {
 	WeekStart string            `json:"week_start"`
 	WeekEnd   string            `json:"week_end"`
 	Planned   []plannedEntry    `json:"planned"`
-	Performed []struct{}        `json:"performed"`
+	Performed []performedEntry  `json:"performed"`
 	Days      []weekDayResponse `json:"days"`
+}
+
+type performedEntry struct {
+	ID         string             `json:"id"`
+	Date       string             `json:"date"`
+	TemplateID *string            `json:"template_id"`
+	Discipline string             `json:"discipline"`
+	StartedAt  *string            `json:"started_at"`
+	Revision   int64              `json:"revision"`
+	Complete   bool               `json:"complete"`
+	Evidence   *performedEvidence `json:"evidence"`
+}
+
+type performedEvidence struct {
+	Source              string  `json:"source"`
+	WorkoutID           *string `json:"workout_id,omitempty"`
+	ReportedCompletedAt *string `json:"reported_completed_at,omitempty"`
+}
+
+func performedEntryFrom(session trainingdomain.Session) performedEntry {
+	return performedEntry{
+		ID:         session.ID,
+		Date:       session.Date,
+		TemplateID: session.TemplateID,
+		Discipline: session.Discipline,
+		StartedAt:  performedTimestamp(session.StartedAt),
+		Revision:   session.Revision,
+		Complete:   session.Complete,
+		Evidence:   performedEvidenceFrom(trainingdomain.EffectiveEvidence(session, session.Complete)),
+	}
+}
+
+func performedEvidenceFrom(evidence *trainingdomain.Evidence) *performedEvidence {
+	if evidence == nil {
+		return nil
+	}
+	return &performedEvidence{
+		Source:              evidence.Source,
+		WorkoutID:           evidence.WatchWorkoutID,
+		ReportedCompletedAt: performedTimestamp(evidence.ReportedCompletedAt),
+	}
+}
+
+func performedTimestamp(millis *int64) *string {
+	if millis == nil {
+		return nil
+	}
+	value := time.UnixMilli(*millis).UTC().Format(time.RFC3339Nano)
+	return &value
 }
 
 type plannedEntry struct {

@@ -69,11 +69,11 @@ func run() error {
 	catalogueService := plansapp.NewCatalogueService(planStore, systemClock{})
 	planHandler := planshttp.NewPlanHandler(planService)
 	catalogueHandler := planshttp.NewCatalogueHandler(catalogueService)
-	weekHandler := planshttp.NewWeekHandler(planService, healthService)
 
 	trainingStore := trainingsqlite.New(database)
 	trainingService := trainingapp.New(trainingStore, systemClock{})
 	trainingHandler := traininghttp.New(trainingService)
+	weekHandler := planshttp.NewWeekHandler(planService, healthService, trainingService)
 
 	router := httpserver.NewRouter(token)
 	router.HandleFunc("POST /api/day", healthHandler.Create)

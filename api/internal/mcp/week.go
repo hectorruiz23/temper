@@ -9,13 +9,14 @@ import (
 	healthdomain "github.com/hectorruiz23/temper/api/internal/health/domain"
 	"github.com/hectorruiz23/temper/api/internal/kernel"
 	plansdomain "github.com/hectorruiz23/temper/api/internal/plans/domain"
+	trainingdomain "github.com/hectorruiz23/temper/api/internal/training/domain"
 )
 
 type weekResponse struct {
 	WeekStart string            `json:"week_start"`
 	WeekEnd   string            `json:"week_end"`
 	Planned   []plannedEntry    `json:"planned"`
-	Performed []struct{}        `json:"performed"`
+	Performed []performedEntry  `json:"performed"`
 	Days      []weekDayResponse `json:"days"`
 }
 
@@ -25,6 +26,23 @@ type plannedEntry struct {
 	Discipline    string `json:"discipline"`
 	Target        string `json:"target"`
 	PlanVersionID int64  `json:"plan_version_id"`
+}
+
+type performedEntry struct {
+	ID         string             `json:"id"`
+	Date       string             `json:"date"`
+	TemplateID *string            `json:"template_id"`
+	Discipline string             `json:"discipline"`
+	StartedAt  *string            `json:"started_at"`
+	Revision   int64              `json:"revision"`
+	Complete   bool               `json:"complete"`
+	Evidence   *performedEvidence `json:"evidence"`
+}
+
+type performedEvidence struct {
+	Source              string  `json:"source"`
+	WorkoutID           *string `json:"workout_id,omitempty"`
+	ReportedCompletedAt *string `json:"reported_completed_at,omitempty"`
 }
 
 type weekDayResponse struct {
@@ -102,11 +120,20 @@ func (h *Handler) week(ctx context.Context, date string) (weekResponse, error) {
 		})
 	}
 
+	sessions, err := h.training.SessionsBetween(ctx, weekStart, weekEnd)
+	if err != nil {
+		return weekResponse{}, err
+	}
+	performed := make([]performedEntry, 0, len(sessions))
+	for _, session := range sessions {
+		performed = append(performed, performedEntryFrom(session))
+	}
+
 	return weekResponse{
 		WeekStart: weekStart,
 		WeekEnd:   weekEnd,
 		Planned:   planned,
-		Performed: make([]struct{}, 0),
+		Performed: performed,
 		Days:      days,
 	}, nil
 }
@@ -171,4 +198,36 @@ func sortCandidates(candidates []plannedCandidate) {
 		}
 		return candidates[i].entry.TemplateID < candidates[j].entry.TemplateID
 	})
+}
+
+func performedEntryFrom(session trainingdomain.Session) performedEntry {
+	return performedEntry{
+		ID:         session.ID,
+		Date:       session.Date,
+		TemplateID: session.TemplateID,
+		Discipline: session.Discipline,
+		StartedAt:  performedTimestamp(session.StartedAt),
+		Revision:   session.Revision,
+		Complete:   session.Complete,
+		Evidence:   performedEvidenceFrom(trainingdomain.EffectiveEvidence(session, session.Complete)),
+	}
+}
+
+func performedEvidenceFrom(evidence *trainingdomain.Evidence) *performedEvidence {
+	if evidence == nil {
+		return nil
+	}
+	return &performedEvidence{
+		Source:              evidence.Source,
+		WorkoutID:           evidence.WatchWorkoutID,
+		ReportedCompletedAt: performedTimestamp(evidence.ReportedCompletedAt),
+	}
+}
+
+func performedTimestamp(millis *int64) *string {
+	if millis == nil {
+		return nil
+	}
+	value := time.UnixMilli(*millis).UTC().Format(time.RFC3339Nano)
+	return &value
 }

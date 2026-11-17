@@ -20,6 +20,7 @@ type Receipt struct {
 
 type Store interface {
 	WithinTransaction(ctx context.Context, fn func(ctx context.Context, tx Transaction) error) error
+	SessionsBetween(ctx context.Context, startDate, endDate string) ([]domain.Session, error)
 }
 
 type Transaction interface {
