@@ -135,7 +135,9 @@ func (s *Service) UpsertDay(ctx context.Context, command UpsertDayCommand) (doma
 		next.Revision = revision
 		next.UpdatedAt = now
 		next.LastSource = command.Source
-		next.StepsSource = cloneString(command.StepsSource)
+		if command.StepsSource != nil {
+			next.StepsSource = cloneString(command.StepsSource)
+		}
 		next = domain.ApplyMetrics(next, command.Metrics)
 
 		if command.SleepStages != nil {

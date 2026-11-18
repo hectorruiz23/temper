@@ -229,6 +229,23 @@ func TestStepsSourceAndStepsAreReplacedOnResync(t *testing.T) {
 		t.Fatalf("steps after the second resync = %v, want 11000", unchanged.Steps)
 	}
 
+	fourth := createCommand("key-4")
+	fourth.ExpectedRevision = 3
+	fourth.Date = first.Date
+	fourth.StepsSource = nil
+	fourth.Metrics.Steps = domain.OptionalInt64{}
+	fourth.Metrics.SleepMS = domain.OptionalInt64{Set: true, Value: intPtr(26000000)}
+	partial, err := service.UpsertDay(ctx, fourth)
+	if err != nil {
+		t.Fatalf("partial upsert: %v", err)
+	}
+	if partial.StepsSource == nil || *partial.StepsSource != "watch" {
+		t.Fatalf("steps_source after a partial upsert = %v, want watch", partial.StepsSource)
+	}
+	if partial.Steps == nil || *partial.Steps != 11000 {
+		t.Fatalf("steps after a partial upsert = %d, want 11000", *partial.Steps)
+	}
+
 	var steps int64
 	var source sql.NullString
 	if err := database.QueryRowContext(ctx, `SELECT steps, steps_source FROM day WHERE date = ?`, first.Date).Scan(&steps, &source); err != nil {
