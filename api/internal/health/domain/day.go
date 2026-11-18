@@ -9,6 +9,18 @@ const (
 	SourceHealthConnect = "health_connect"
 )
 
+var StepsSources = []string{
+	"watch",
+	"fitness_band",
+	"ring",
+	"chest_strap",
+	"phone",
+	"smart_display",
+	"head_mounted",
+	"scale",
+	"other",
+}
+
 type OptionalInt64 struct {
 	Set   bool
 	Value *int64
@@ -71,6 +83,7 @@ type Day struct {
 	HRVRMSSDMS   *float64
 	UpdatedAt    int64
 	LastSource   string
+	StepsSource  *string
 	SleepStages  []SleepStage
 	Workouts     []Workout
 }
@@ -80,6 +93,7 @@ type Upsert struct {
 	Timezone         string
 	ExpectedRevision int64
 	Source           string
+	StepsSource      *string
 	Metrics          MetricsPatch
 	SleepStages      *[]SleepStage
 	Workouts         *[]Workout

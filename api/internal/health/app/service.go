@@ -44,6 +44,7 @@ type UpsertDayCommand struct {
 	Timezone         string
 	ExpectedRevision int64
 	Source           string
+	StepsSource      *string
 	Metrics          domain.MetricsPatch
 	SleepStages      *[]domain.SleepStage
 	Workouts         *[]domain.Workout
@@ -81,6 +82,7 @@ func (s *Service) UpsertDay(ctx context.Context, command UpsertDayCommand) (doma
 		Timezone:         command.Timezone,
 		ExpectedRevision: command.ExpectedRevision,
 		Source:           command.Source,
+		StepsSource:      command.StepsSource,
 		Metrics:          command.Metrics,
 		SleepStages:      command.SleepStages,
 		Workouts:         command.Workouts,
@@ -133,6 +135,7 @@ func (s *Service) UpsertDay(ctx context.Context, command UpsertDayCommand) (doma
 		next.Revision = revision
 		next.UpdatedAt = now
 		next.LastSource = command.Source
+		next.StepsSource = cloneString(command.StepsSource)
 		next = domain.ApplyMetrics(next, command.Metrics)
 
 		if command.SleepStages != nil {
@@ -168,6 +171,14 @@ func (s *Service) UpsertDay(ctx context.Context, command UpsertDayCommand) (doma
 	return result, nil
 }
 
+func cloneString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
 func cloneStages(stages []domain.SleepStage) []domain.SleepStage {
 	if stages == nil {
 		return nil
@@ -182,6 +193,7 @@ type canonicalCommand struct {
 	Timezone         string              `json:"timezone"`
 	ExpectedRevision int64               `json:"expected_revision"`
 	Source           string              `json:"source"`
+	StepsSource      *string             `json:"steps_source"`
 	Metrics          canonicalMetrics    `json:"metrics"`
 	SleepStages      *[]canonicalStage   `json:"sleep_stages"`
 	Workouts         *[]canonicalWorkout `json:"workouts"`
@@ -227,6 +239,7 @@ func requestHash(command UpsertDayCommand) (string, error) {
 		Timezone:         command.Timezone,
 		ExpectedRevision: command.ExpectedRevision,
 		Source:           command.Source,
+		StepsSource:      command.StepsSource,
 		Metrics: canonicalMetrics{
 			SleepMS:      canonicalMetricInt64{Set: command.Metrics.SleepMS.Set, Value: command.Metrics.SleepMS.Value},
 			Steps:        canonicalMetricInt64{Set: command.Metrics.Steps.Set, Value: command.Metrics.Steps.Value},
