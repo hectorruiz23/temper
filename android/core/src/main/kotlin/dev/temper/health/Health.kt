@@ -16,8 +16,11 @@ enum class HealthPermission(val permission: String, val label: String) {
     Sleep("android.permission.health.READ_SLEEP", "Sleep"),
     Steps("android.permission.health.READ_STEPS", "Steps"),
     RestingHeartRate("android.permission.health.READ_RESTING_HEART_RATE", "Resting HR"),
+    HeartRate("android.permission.health.READ_HEART_RATE", "Heart rate"),
     HeartRateVariability("android.permission.health.READ_HEART_RATE_VARIABILITY", "HRV"),
-    Exercise("android.permission.health.READ_EXERCISE", "Workouts");
+    Exercise("android.permission.health.READ_EXERCISE", "Workouts"),
+    Distance("android.permission.health.READ_DISTANCE", "Distance"),
+    TotalCaloriesBurned("android.permission.health.READ_TOTAL_CALORIES_BURNED", "Calories");
 
     companion object {
         val all: List<HealthPermission> = entries
@@ -72,7 +75,36 @@ data class ExerciseSample(
     val discipline: String,
     val deviceKind: String? = null,
     val watchVerified: Boolean = false,
-    val distanceMeters: Double? = null,
+    val laps: List<ExerciseLapSample> = emptyList(),
+)
+
+data class ExerciseLapSample(
+    val start: Instant,
+    val end: Instant,
+    val meters: Double?,
+)
+
+data class DistanceSample(
+    val id: String,
+    val start: Instant,
+    val end: Instant,
+    val meters: Double,
+    val origin: String = "other",
+)
+
+data class CaloriesSample(
+    val id: String,
+    val start: Instant,
+    val end: Instant,
+    val kilocalories: Double,
+    val origin: String = "other",
+)
+
+data class HeartRateSample(
+    val id: String,
+    val time: Instant,
+    val beatsPerMinute: Long,
+    val origin: String = "other",
 )
 
 data class HealthRecords(
@@ -81,11 +113,29 @@ data class HealthRecords(
     val restingHeartRate: List<RestingHeartRateSample> = emptyList(),
     val hrvRmssd: List<HrvRmssdSample> = emptyList(),
     val exercise: List<ExerciseSample> = emptyList(),
+    val distance: List<DistanceSample> = emptyList(),
+    val calories: List<CaloriesSample> = emptyList(),
+    val heartRate: List<HeartRateSample> = emptyList(),
 )
 
 data class SleepStageTotal(
     val stage: String,
     val durationMs: Long,
+)
+
+enum class WorkoutDistanceSource {
+    Records,
+    Laps,
+    Absent,
+}
+
+data class WorkoutSplitSample(
+    val position: Int,
+    val kind: String?,
+    val distanceMeters: Double?,
+    val durationMs: Long?,
+    val avgHeartRateBpm: Long? = null,
+    val paceSecPerKm: Double? = null,
 )
 
 data class HealthWorkout(
@@ -97,6 +147,12 @@ data class HealthWorkout(
     val durationMs: Long,
     val distanceMeters: Double?,
     val watchVerified: Boolean,
+    val distanceSource: WorkoutDistanceSource = WorkoutDistanceSource.Absent,
+    val paceSecPerKm: Double? = null,
+    val avgHeartRateBpm: Long? = null,
+    val maxHeartRateBpm: Long? = null,
+    val caloriesKcal: Double? = null,
+    val splits: List<WorkoutSplitSample> = emptyList(),
 )
 
 data class HealthDaySnapshot(

@@ -2,12 +2,15 @@ package dev.temper.health
 
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord as HealthExerciseSession
+import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord as HealthSleepSession
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -104,11 +107,54 @@ class HealthConnectReader(context: Context) : HealthReader {
                         discipline = discipline(record.exerciseType),
                         deviceKind = deviceKind(device?.type),
                         watchVerified = device?.type == Device.TYPE_WATCH,
-                        distanceMeters = record.laps
-                            .mapNotNull { lap -> lap.length?.inMeters }
-                            .sum()
-                            .takeIf { it > 0.0 },
+                        laps = record.laps.map { lap ->
+                            ExerciseLapSample(
+                                start = lap.startTime,
+                                end = lap.endTime,
+                                meters = lap.length?.inMeters,
+                            )
+                        },
                     )
+                }
+            } else {
+                emptyList()
+            },
+            distance = if (HealthPermission.Distance in permissions) {
+                readAll(client, DistanceRecord::class, range).map { record ->
+                    DistanceSample(
+                        id = stableId(record.metadata),
+                        start = record.startTime,
+                        end = record.endTime,
+                        meters = record.distance.inMeters,
+                        origin = deviceKind(record.metadata.device?.type) ?: "other",
+                    )
+                }
+            } else {
+                emptyList()
+            },
+            calories = if (HealthPermission.TotalCaloriesBurned in permissions) {
+                readAll(client, TotalCaloriesBurnedRecord::class, range).map { record ->
+                    CaloriesSample(
+                        id = stableId(record.metadata),
+                        start = record.startTime,
+                        end = record.endTime,
+                        kilocalories = record.energy.inKilocalories,
+                        origin = deviceKind(record.metadata.device?.type) ?: "other",
+                    )
+                }
+            } else {
+                emptyList()
+            },
+            heartRate = if (HealthPermission.HeartRate in permissions) {
+                readAll(client, HeartRateRecord::class, range).flatMap { record ->
+                    record.samples.mapIndexed { index, sample ->
+                        HeartRateSample(
+                            id = "${stableId(record.metadata)}:$index",
+                            time = sample.time,
+                            beatsPerMinute = sample.beatsPerMinute,
+                            origin = deviceKind(record.metadata.device?.type) ?: "other",
+                        )
+                    }
                 }
             } else {
                 emptyList()

@@ -114,7 +114,14 @@ private fun HealthSyncContent(
                         append(" (${healthDaysLabel(phase.missing)} had no data)")
                     }
                 },
-                detail = "Today and the six days before it were read from Health Connect.",
+                detail = buildString {
+                    append("Today and the six days before it were read from Health Connect.")
+                    if (phase.withoutDistance == 1) {
+                        append(" 1 run came without a distance record.")
+                    } else if (phase.withoutDistance > 1) {
+                        append(" ${phase.withoutDistance} runs came without a distance record.")
+                    }
+                },
             )
             HealthPhase.Checking -> SyncStrip(
                 mark = "…",
