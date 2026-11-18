@@ -1,5 +1,6 @@
 package dev.temper.model
 
+import dev.temper.health.HealthWorkout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -264,6 +265,11 @@ data class HealthWorkoutWire(
     val discipline: String = "",
     @SerialName("duration_ms") val durationMs: Long = 0,
     @SerialName("distance_m") val distanceM: Double? = null,
+    @SerialName("avg_hr_bpm") val avgHrBpm: Long? = null,
+    @SerialName("max_hr_bpm") val maxHrBpm: Long? = null,
+    @SerialName("calories_kcal") val caloriesKcal: Double? = null,
+    @SerialName("pace_sec_per_km") val paceSecPerKm: Double? = null,
+    @SerialName("splits") val splits: List<DayWorkoutSplit>? = null,
     @SerialName("watch_verified") val watchVerified: Boolean = false,
 )
 
@@ -299,5 +305,46 @@ data class DayWorkout(
     val discipline: String,
     @SerialName("duration_ms") val durationMs: Long,
     @SerialName("distance_m") val distanceM: Double? = null,
+    @SerialName("avg_hr_bpm") val avgHrBpm: Long? = null,
+    @SerialName("max_hr_bpm") val maxHrBpm: Long? = null,
+    @SerialName("calories_kcal") val caloriesKcal: Double? = null,
+    @SerialName("pace_sec_per_km") val paceSecPerKm: Double? = null,
+    val splits: List<DayWorkoutSplit>? = null,
     @SerialName("watch_verified") val watchVerified: Boolean,
+)
+
+@Serializable
+data class DayWorkoutSplit(
+    val position: Int,
+    val kind: String? = null,
+    @SerialName("distance_m") val distanceM: Double? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+    @SerialName("avg_hr_bpm") val avgHrBpm: Long? = null,
+    @SerialName("pace_sec_per_km") val paceSecPerKm: Double? = null,
+)
+
+fun HealthWorkout.toDayWorkout(): DayWorkout = DayWorkout(
+    origin = "health_connect",
+    externalId = externalId,
+    deviceKind = deviceKind,
+    startedAt = startedAt.toEpochMilli(),
+    endedAt = endedAt.toEpochMilli(),
+    discipline = discipline,
+    durationMs = durationMs,
+    distanceM = distanceMeters,
+    avgHrBpm = avgHeartRateBpm,
+    maxHrBpm = maxHeartRateBpm,
+    caloriesKcal = caloriesKcal,
+    paceSecPerKm = paceSecPerKm,
+    splits = splits.map { split ->
+        DayWorkoutSplit(
+            position = split.position,
+            kind = split.kind,
+            distanceM = split.distanceMeters,
+            durationMs = split.durationMs,
+            avgHrBpm = split.avgHeartRateBpm,
+            paceSecPerKm = split.paceSecPerKm,
+        )
+    }.takeIf { it.isNotEmpty() },
+    watchVerified = watchVerified,
 )

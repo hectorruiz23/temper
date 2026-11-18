@@ -1,20 +1,26 @@
 package dev.temper
 
 import dev.temper.api.TemperJson
+import dev.temper.health.CaloriesSample
+import dev.temper.health.DistanceSample
+import dev.temper.health.ExerciseLapSample
 import dev.temper.health.ExerciseSample
 import dev.temper.health.HealthDayAggregator
 import dev.temper.health.HealthPermission
 import dev.temper.health.HealthRecords
+import dev.temper.health.HeartRateSample
 import dev.temper.health.HrvRmssdSample
 import dev.temper.health.SleepSample
 import dev.temper.health.SleepStageSample
 import dev.temper.health.StepsSample
+import dev.temper.health.WorkoutDistanceSource
 import dev.temper.health.healthDayKey
 import dev.temper.health.healthDaysLabel
 import dev.temper.health.lastSevenDays
 import dev.temper.model.DayMetrics
 import dev.temper.model.DayUploadRequest
 import dev.temper.model.DayWorkout
+import dev.temper.model.DayWorkoutSplit
 import dev.temper.model.HealthSleepStage
 import java.time.Duration
 import java.time.LocalDate
@@ -86,7 +92,7 @@ class HealthDayAggregatorTest {
                     discipline = "run",
                     deviceKind = "watch",
                     watchVerified = true,
-                    distanceMeters = 1000.0,
+                    laps = listOf(ExerciseLapSample(start, end, 1000.0)),
                 ),
             ),
         )
@@ -312,5 +318,159 @@ class HealthDayAggregatorTest {
         assertEquals(0L, day.steps)
         assertNull(day.hrvRmssdMs)
         assertEquals(1, day.sleepStages.size)
+    }
+
+    @Test
+    fun aRunWithDistanceHeartRateAndCaloriesFillsEveryMetric() {
+        val day = LocalDate.of(2026, 11, 18)
+        val start = day.atTime(7, 0).atZone(zone).toInstant()
+        val end = start.plusSeconds(2480)
+        val records = HealthRecords(
+            exercise = listOf(ExerciseSample("run-1", start, end, "run", "watch", true)),
+            distance = listOf(DistanceSample("distance-1", start, end, 5000.0, "watch")),
+            calories = listOf(CaloriesSample("calories-1", start, end, 342.0, "watch")),
+            heartRate = listOf(
+                HeartRateSample("hr-1", start.minusSeconds(60), 99, "watch"),
+                HeartRateSample("hr-2", start.plusSeconds(60), 141, "watch"),
+                HeartRateSample("hr-3", start.plusSeconds(1240), 158, "watch"),
+                HeartRateSample("hr-4", start.plusSeconds(2400), 169, "watch"),
+                HeartRateSample("hr-5", end.plusSeconds(60), 190, "watch"),
+            ),
+        )
+
+        val workout = HealthDayAggregator.aggregate(records, day, zone).workouts.single()
+
+        assertEquals(2_480_000L, workout.durationMs)
+        assertEquals(5000.0, workout.distanceMeters!!, 0.0)
+        assertEquals(WorkoutDistanceSource.Records, workout.distanceSource)
+        assertEquals(496.0, workout.paceSecPerKm!!, 0.0)
+        assertEquals(342.0, workout.caloriesKcal!!, 0.0)
+        assertEquals(156L, workout.avgHeartRateBpm)
+        assertEquals(169L, workout.maxHeartRateBpm)
+        assertTrue(workout.splits.isEmpty())
+    }
+
+    @Test
+    fun aRunWithoutDistanceStaysAbsentInsteadOfZero() {
+        val day = LocalDate.of(2026, 11, 18)
+        val start = day.atTime(7, 0).atZone(zone).toInstant()
+        val end = start.plusSeconds(2480)
+        val records = HealthRecords(
+            exercise = listOf(ExerciseSample("run-1", start, end, "run", "watch", true)),
+        )
+
+        val workout = HealthDayAggregator.aggregate(records, day, zone).workouts.single()
+
+        assertNull(workout.distanceMeters)
+        assertNull(workout.paceSecPerKm)
+        assertNull(workout.avgHeartRateBpm)
+        assertNull(workout.caloriesKcal)
+        assertEquals(WorkoutDistanceSource.Absent, workout.distanceSource)
+        assertEquals(2_480_000L, workout.durationMs)
+        assertTrue(workout.splits.isEmpty())
+    }
+
+    @Test
+    fun distanceRecordSegmentsBecomeSplits() {
+        val day = LocalDate.of(2026, 11, 18)
+        val start = day.atTime(7, 0).atZone(zone).toInstant()
+        val records = HealthRecords(
+            exercise = listOf(ExerciseSample("run-1", start, start.plusSeconds(750), "run", "watch", true)),
+            distance = listOf(
+                DistanceSample("distance-1", start, start.plusSeconds(300), 1000.0, "watch"),
+                DistanceSample("distance-2", start.plusSeconds(300), start.plusSeconds(750), 1500.0, "watch"),
+            ),
+        )
+
+        val workout = HealthDayAggregator.aggregate(records, day, zone).workouts.single()
+
+        assertEquals(2500.0, workout.distanceMeters!!, 0.0)
+        assertEquals(listOf(0, 1), workout.splits.map { it.position })
+        assertEquals(listOf("segment", "segment"), workout.splits.map { it.kind })
+        assertEquals(listOf(1000.0, 1500.0), workout.splits.map { it.distanceMeters })
+        assertEquals(listOf(300_000L, 450_000L), workout.splits.map { it.durationMs })
+        assertEquals(listOf(300.0, 300.0), workout.splits.map { it.paceSecPerKm })
+    }
+
+    @Test
+    fun lapsProvideDistanceAndSplitsWhenDistanceRecordsAreMissing() {
+        val day = LocalDate.of(2026, 11, 18)
+        val start = day.atTime(7, 0).atZone(zone).toInstant()
+        val records = HealthRecords(
+            exercise = listOf(
+                ExerciseSample(
+                    id = "run-1",
+                    start = start,
+                    end = start.plusSeconds(620),
+                    discipline = "run",
+                    deviceKind = "watch",
+                    watchVerified = true,
+                    laps = listOf(
+                        ExerciseLapSample(start, start.plusSeconds(300), 1000.0),
+                        ExerciseLapSample(start.plusSeconds(300), start.plusSeconds(620), 1000.0),
+                    ),
+                ),
+            ),
+        )
+
+        val workout = HealthDayAggregator.aggregate(records, day, zone).workouts.single()
+
+        assertEquals(2000.0, workout.distanceMeters!!, 0.0)
+        assertEquals(WorkoutDistanceSource.Laps, workout.distanceSource)
+        assertEquals(310.0, workout.paceSecPerKm!!, 0.0)
+        assertEquals(listOf("lap", "lap"), workout.splits.map { it.kind })
+        assertEquals(listOf(300.0, 320.0), workout.splits.map { it.paceSecPerKm })
+    }
+
+    @Test
+    fun phoneAndWatchDistancesAreNotSummed() {
+        val day = LocalDate.of(2026, 11, 18)
+        val start = day.atTime(7, 0).atZone(zone).toInstant()
+        val end = start.plusSeconds(2480)
+        val records = HealthRecords(
+            exercise = listOf(ExerciseSample("run-1", start, end, "run", "watch", true)),
+            distance = listOf(
+                DistanceSample("distance-phone", start, end, 5050.0, "phone"),
+                DistanceSample("distance-watch", start, end, 5000.0, "watch"),
+            ),
+            calories = listOf(
+                CaloriesSample("calories-phone", start, end, 390.0, "phone"),
+                CaloriesSample("calories-watch", start, end, 342.0, "watch"),
+            ),
+        )
+
+        val workout = HealthDayAggregator.aggregate(records, day, zone).workouts.single()
+
+        assertEquals(5000.0, workout.distanceMeters!!, 0.0)
+        assertEquals(342.0, workout.caloriesKcal!!, 0.0)
+    }
+
+    @Test
+    fun aRunPayloadCarriesDistancePaceHeartRateAndSplits() {
+        val workout = DayWorkout(
+            origin = "health_connect",
+            externalId = "record-1",
+            deviceKind = "watch",
+            startedAt = 1_763_000_000_000,
+            endedAt = 1_763_002_480_000,
+            discipline = "run",
+            durationMs = 2_480_000,
+            distanceM = 5000.0,
+            avgHrBpm = 156,
+            maxHrBpm = 169,
+            caloriesKcal = 342.0,
+            paceSecPerKm = 496.0,
+            splits = listOf(DayWorkoutSplit(0, "segment", 2500.0, 1_240_000, null, 496.0)),
+            watchVerified = true,
+        )
+
+        val body = TemperJson.encodeToString(workout)
+
+        assertTrue(body.contains("\"distance_m\":5000.0"))
+        assertTrue(body.contains("\"pace_sec_per_km\":496.0"))
+        assertTrue(body.contains("\"avg_hr_bpm\":156"))
+        assertTrue(body.contains("\"max_hr_bpm\":169"))
+        assertTrue(body.contains("\"calories_kcal\":342.0"))
+        assertTrue(body.contains("\"splits\":[{\"position\":0,\"kind\":\"segment\""))
     }
 }

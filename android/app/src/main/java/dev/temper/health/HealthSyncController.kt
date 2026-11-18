@@ -9,11 +9,12 @@ import dev.temper.config.ConfigStore
 import dev.temper.config.StoredConfig
 import dev.temper.model.DayMetrics
 import dev.temper.model.DayUploadRequest
-import dev.temper.model.DayWorkout
+import dev.temper.model.DayWorkoutSplit
 import dev.temper.model.HealthDay
 import dev.temper.model.HealthDayEnvelope
 import dev.temper.model.HealthSleepStage
 import dev.temper.model.HealthWorkoutWire
+import dev.temper.model.toDayWorkout
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -35,7 +36,7 @@ sealed interface HealthPhase {
     data class Unavailable(val availability: HealthAvailability) : HealthPhase
     data class PermissionsDenied(val missing: List<HealthPermission>, val revoked: Boolean) : HealthPhase
     data class NoData(val dates: List<LocalDate>) : HealthPhase
-    data class Uploaded(val synced: Int, val missing: List<LocalDate>) : HealthPhase
+    data class Uploaded(val synced: Int, val missing: List<LocalDate>, val withoutDistance: Int = 0) : HealthPhase
     data class Failed(val message: String, val retryable: Boolean, val requiresConfiguration: Boolean = false) : HealthPhase
 }
 
@@ -153,6 +154,7 @@ class HealthSyncController(
         val today = LocalDate.now(zone)
         val syncedDays = mutableListOf<LocalDate>()
         val missingDays = mutableListOf<LocalDate>()
+        var runsWithoutDistance = 0
 
         for (day in lastSevenDays(today)) {
             val records = runCatching { reader.read(day, zone, granted) }
@@ -173,7 +175,12 @@ class HealthSyncController(
                 continue
             }
             when (val result = upload(config, snapshot, granted)) {
-                is UploadResult.Current, is UploadResult.Saved -> syncedDays += day
+                is UploadResult.Current, is UploadResult.Saved -> {
+                    syncedDays += day
+                    runsWithoutDistance += snapshot.workouts.count { workout ->
+                        workout.discipline == "run" && workout.distanceSource == WorkoutDistanceSource.Absent
+                    }
+                }
                 is UploadResult.Failure -> {
                     finish(
                         base.copy(
@@ -190,7 +197,11 @@ class HealthSyncController(
         } else {
             finish(
                 base.copy(
-                    phase = HealthPhase.Uploaded(synced = syncedDays.size, missing = missingDays.sorted()),
+                    phase = HealthPhase.Uploaded(
+                        synced = syncedDays.size,
+                        missing = missingDays.sorted(),
+                        withoutDistance = runsWithoutDistance,
+                    ),
                 ),
             )
         }
@@ -273,19 +284,7 @@ class HealthSyncController(
                 null
             },
             workouts = if (HealthPermission.Exercise in granted) {
-                snapshot.workouts.map { workout ->
-                    DayWorkout(
-                        origin = "health_connect",
-                        externalId = workout.externalId,
-                        deviceKind = workout.deviceKind,
-                        startedAt = workout.startedAt.toEpochMilli(),
-                        endedAt = workout.endedAt.toEpochMilli(),
-                        discipline = workout.discipline,
-                        durationMs = workout.durationMs,
-                        distanceM = workout.distanceMeters,
-                        watchVerified = workout.watchVerified,
-                    )
-                }
+                snapshot.workouts.map { it.toDayWorkout() }
             } else {
                 null
             },
@@ -335,6 +334,11 @@ class HealthSyncController(
         discipline,
         durationMs.toString(),
         distanceM?.toString().orEmpty(),
+        avgHrBpm?.toString().orEmpty(),
+        maxHrBpm?.toString().orEmpty(),
+        caloriesKcal?.toString().orEmpty(),
+        paceSecPerKm?.toString().orEmpty(),
+        splits.orEmpty().map { it.signature() }.joinToString(","),
         watchVerified.toString(),
     ).joinToString("|")
 
@@ -346,8 +350,31 @@ class HealthSyncController(
         discipline,
         durationMs.toString(),
         distanceMeters?.toString().orEmpty(),
+        avgHeartRateBpm?.toString().orEmpty(),
+        maxHeartRateBpm?.toString().orEmpty(),
+        caloriesKcal?.toString().orEmpty(),
+        paceSecPerKm?.toString().orEmpty(),
+        splits.map { it.signature() }.joinToString(","),
         watchVerified.toString(),
     ).joinToString("|")
+
+    private fun DayWorkoutSplit.signature(): String = listOf(
+        position.toString(),
+        kind.orEmpty(),
+        distanceM?.toString().orEmpty(),
+        durationMs?.toString().orEmpty(),
+        avgHrBpm?.toString().orEmpty(),
+        paceSecPerKm?.toString().orEmpty(),
+    ).joinToString(":")
+
+    private fun WorkoutSplitSample.signature(): String = listOf(
+        position.toString(),
+        kind.orEmpty(),
+        distanceMeters?.toString().orEmpty(),
+        durationMs?.toString().orEmpty(),
+        avgHeartRateBpm?.toString().orEmpty(),
+        paceSecPerKm?.toString().orEmpty(),
+    ).joinToString(":")
 
     private suspend fun readPreviouslyGranted(): Set<String> =
         runCatching { configStore.readGrantedHealthPermissions() }.getOrDefault(emptySet())

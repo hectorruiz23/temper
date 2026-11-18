@@ -55,19 +55,7 @@ object HealthDayAggregator {
         val workouts = records.exercise
             .uniqueBy { it.id }
             .filter { it.id.isNotBlank() && within(it.start, start, end) }
-            .map { sample ->
-                val ended = if (sample.end.isBefore(sample.start)) sample.start else sample.end
-                HealthWorkout(
-                    externalId = sample.id,
-                    deviceKind = sample.deviceKind,
-                    startedAt = sample.start,
-                    endedAt = ended,
-                    discipline = sample.discipline.ifBlank { "other" },
-                    durationMs = Duration.between(sample.start, ended).toMillis().coerceAtLeast(0),
-                    distanceMeters = sample.distanceMeters?.takeIf { it > 0.0 },
-                    watchVerified = sample.watchVerified,
-                )
-            }
+            .map { sample -> WorkoutMetrics.workout(sample, records) }
 
         return HealthDaySnapshot(
             date = day,
