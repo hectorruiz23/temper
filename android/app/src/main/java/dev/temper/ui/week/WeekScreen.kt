@@ -39,6 +39,7 @@ import dev.temper.ui.components.RailHint
 import dev.temper.ui.components.TemperScaffold
 import dev.temper.ui.components.TemperTopBar
 import dev.temper.ui.components.TopBarAction
+import dev.temper.ui.health.HealthSyncTopBarAction
 import dev.temper.ui.parseDate
 import dev.temper.ui.theme.Card
 import dev.temper.ui.theme.DataFont
@@ -72,7 +73,10 @@ fun WeekScreen(
             TemperTopBar(
                 title = "This week",
                 subtitle = content?.let { weekLabel(it.week.weekStart, it.week.weekEnd) } ?: "Reading the server",
-                trailing = { TopBarAction("Settings", onOpenSettings) },
+                trailing = {
+                    HealthSyncTopBarAction(container)
+                    TopBarAction("Settings", onOpenSettings)
+                },
             )
         },
         rail = {
