@@ -70,6 +70,7 @@ class HealthConnectReader(context: Context) : HealthReader {
                         start = record.startTime,
                         end = record.endTime,
                         count = record.count,
+                        origin = deviceKind(record.metadata.device?.type) ?: "other",
                     )
                 }
             } else {

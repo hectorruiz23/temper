@@ -17,6 +17,18 @@ object HealthDayAggregator {
         "unknown",
     )
 
+    private val originOrder = listOf(
+        "watch",
+        "fitness_band",
+        "ring",
+        "chest_strap",
+        "phone",
+        "smart_display",
+        "head_mounted",
+        "scale",
+        "other",
+    )
+
     fun aggregate(records: HealthRecords, day: LocalDate, zone: ZoneId): HealthDaySnapshot {
         val start = day.atStartOfDay(zone).toInstant()
         val end = day.plusDays(1).atStartOfDay(zone).toInstant()
@@ -38,7 +50,9 @@ object HealthDayAggregator {
             .sortedBy { stageRank(it.stage) }
 
         val stepsSamples = records.steps.uniqueBy { it.id }.filter { within(it.start, start, end) }
-        val steps = if (stepsSamples.isEmpty()) null else stepsSamples.sumOf { it.count }
+        val stepsByOrigin = stepsSamples.groupBy { normalizeOrigin(it.origin) }
+        val stepsSource = stepsByOrigin.keys.minByOrNull { originRank(it) }
+        val steps = stepsSource?.let { origin -> stepsByOrigin.getValue(origin).sumOf { it.count } }
 
         val restingHr = records.restingHeartRate
             .uniqueBy { it.id }
@@ -62,6 +76,7 @@ object HealthDayAggregator {
             timezone = zone,
             sleepMs = sleepMs,
             steps = steps,
+            stepsSource = stepsSource,
             restingHrBpm = restingHr,
             hrvRmssdMs = hrv,
             sleepStages = stages,
@@ -87,6 +102,13 @@ object HealthDayAggregator {
     }
 
     private fun stageRank(value: String): Int = stageOrder.indexOf(value).let { if (it < 0) stageOrder.size else it }
+
+    private fun normalizeOrigin(value: String): String {
+        val origin = value.trim().lowercase()
+        return if (origin.isEmpty()) "other" else origin
+    }
+
+    private fun originRank(value: String): Int = originOrder.indexOf(value).let { if (it < 0) originOrder.size else it }
 
     private fun <T> List<T>.uniqueBy(id: (T) -> String): List<T> {
         val seen = HashSet<String>()

@@ -244,6 +244,7 @@ data class HealthDay(
     @SerialName("hrv_rmssd_ms") val hrvRmssdMs: Double? = null,
     @SerialName("updated_at") val updatedAt: Long = 0,
     @SerialName("last_source") val lastSource: String = "",
+    @SerialName("steps_source") val stepsSource: String? = null,
     @SerialName("sleep_stages") val sleepStages: List<HealthSleepStage> = emptyList(),
     val workouts: List<HealthWorkoutWire> = emptyList(),
 )
@@ -279,6 +280,7 @@ data class DayUploadRequest(
     val timezone: String,
     @SerialName("expected_revision") val expectedRevision: Long,
     val source: String,
+    @SerialName("steps_source") val stepsSource: String? = null,
     val metrics: DayMetrics? = null,
     @SerialName("sleep_stages") val sleepStages: List<HealthSleepStage>? = null,
     val workouts: List<DayWorkout>? = null,
