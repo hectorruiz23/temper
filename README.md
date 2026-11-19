@@ -1,13 +1,12 @@
 # Temper
 
-Temper is a single-user training service. It stores one person's workout plans and the sets actually performed,
-running plans and interval sessions, and the daily health data that arrives from his watch through Health
-Connect.
+Temper is the service I train with. It stores my workout plans and the sets I actually lift, the plans and interval
+sessions I run, and the daily health data that arrives from my watch through Health Connect.
 
-Plans are written by the owner's assistant agent, Archi, and never by Temper itself: Temper is the memory and the
-source of truth. It is a Go binary with SQLite as its only store, built to run as one process on a Raspberry Pi.
+My assistant agent, Archi, writes the plans, never Temper itself: Temper is the memory and the source of truth. It is
+a Go binary with SQLite as its only store, built to run as one process on a Raspberry Pi.
 
-There is no web interface. The owner's Android app speaks to the HTTP API, and Archi speaks to the MCP endpoint.
+There is no web interface. My Android app speaks to the HTTP API, and Archi speaks to the MCP endpoint.
 The authenticated API covers plans, the exercise catalogue, the scheduled week view and daily health.
 
 ## Build
@@ -116,7 +115,7 @@ Progression is context, never advice: it returns what was performed, the targets
 exercise can progress on. Nothing in the response tells the caller what to do next.
 
 Creating a session stores no evidence. A session is complete only after a check-in with a link to a present, verified
-watch workout or with the owner's reported completion; the plan never counts as evidence.
+watch workout or with my reported completion; the plan never counts as evidence.
 
 ## MCP
 
