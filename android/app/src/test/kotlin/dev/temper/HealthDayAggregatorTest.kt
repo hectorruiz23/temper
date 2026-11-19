@@ -473,7 +473,7 @@ class HealthDayAggregatorTest {
         assertTrue(body.contains("\"calories_kcal\":342.0"))
         assertTrue(body.contains("\"splits\":[{\"position\":0,\"kind\":\"segment\""))
     }
-}
+
     @Test
     fun theWatchCountsTheStepsAndThePhoneIsIgnored() {
         val day = LocalDate.of(2026, 11, 17)

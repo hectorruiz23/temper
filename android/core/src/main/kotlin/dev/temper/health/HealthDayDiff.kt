@@ -3,7 +3,6 @@ package dev.temper.health
 import dev.temper.model.DayWorkoutSplit
 import dev.temper.model.HealthDay
 import dev.temper.model.HealthWorkoutWire
-import dev.temper.model.WorkoutSplitSample
 
 object HealthDayDiff {
     fun sameDay(existing: HealthDay, snapshot: HealthDaySnapshot, granted: Set<HealthPermission>): Boolean {
