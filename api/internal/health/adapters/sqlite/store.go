@@ -81,9 +81,10 @@ func getDay(ctx context.Context, database executor, date string) (domain.Day, er
 	var steps sql.NullInt64
 	var restingHRBPM sql.NullInt64
 	var hrvRMSSDMS sql.NullFloat64
+	var stepsSource sql.NullString
 
 	err := database.QueryRowContext(ctx, `
-		SELECT date, timezone, revision, sleep_ms, steps, resting_hr_bpm, hrv_rmssd_ms, updated_at, last_source
+		SELECT date, timezone, revision, sleep_ms, steps, resting_hr_bpm, hrv_rmssd_ms, updated_at, last_source, steps_source
 		FROM day
 		WHERE date = ?`, date).Scan(
 		&day.Date,
@@ -95,6 +96,7 @@ func getDay(ctx context.Context, database executor, date string) (domain.Day, er
 		&hrvRMSSDMS,
 		&day.UpdatedAt,
 		&day.LastSource,
+		&stepsSource,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Day{}, domain.ErrDayNotFound
@@ -107,6 +109,7 @@ func getDay(ctx context.Context, database executor, date string) (domain.Day, er
 	day.Steps = nullableInt64(steps)
 	day.RestingHRBPM = nullableInt64(restingHRBPM)
 	day.HRVRMSSDMS = nullableFloat64(hrvRMSSDMS)
+	day.StepsSource = nullableString(stepsSource)
 
 	stages, err := getStages(ctx, database, date)
 	if err != nil {
@@ -265,8 +268,8 @@ func placeholders(count int) string {
 
 func saveDay(ctx context.Context, database executor, day domain.Day) error {
 	if _, err := database.ExecContext(ctx, `
-		INSERT INTO day (date, timezone, revision, sleep_ms, steps, resting_hr_bpm, hrv_rmssd_ms, updated_at, last_source)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO day (date, timezone, revision, sleep_ms, steps, resting_hr_bpm, hrv_rmssd_ms, updated_at, last_source, steps_source)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(date) DO UPDATE SET
 			timezone = excluded.timezone,
 			revision = excluded.revision,
@@ -275,7 +278,8 @@ func saveDay(ctx context.Context, database executor, day domain.Day) error {
 			resting_hr_bpm = excluded.resting_hr_bpm,
 			hrv_rmssd_ms = excluded.hrv_rmssd_ms,
 			updated_at = excluded.updated_at,
-			last_source = excluded.last_source`,
+			last_source = excluded.last_source,
+			steps_source = excluded.steps_source`,
 		day.Date,
 		day.Timezone,
 		day.Revision,
@@ -285,6 +289,7 @@ func saveDay(ctx context.Context, database executor, day domain.Day) error {
 		float64Argument(day.HRVRMSSDMS),
 		day.UpdatedAt,
 		day.LastSource,
+		stringArgument(day.StepsSource),
 	); err != nil {
 		return err
 	}

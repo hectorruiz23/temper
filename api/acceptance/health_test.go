@@ -22,6 +22,7 @@ type dayResponseEnvelope struct {
 		HRVRMSSDMS   *float64 `json:"hrv_rmssd_ms"`
 		UpdatedAt    int64    `json:"updated_at"`
 		LastSource   string   `json:"last_source"`
+		StepsSource  *string  `json:"steps_source"`
 		SleepStages  []struct {
 			Stage      string `json:"stage"`
 			DurationMS int64  `json:"duration_ms"`
@@ -120,6 +121,7 @@ func TestHealthDayIngestAndRead(t *testing.T) {
 		"timezone": "Europe/Madrid",
 		"expected_revision": 0,
 		"source": "health_connect",
+		"steps_source": "watch",
 		"metrics": {"sleep_ms": 25200000, "steps": 0, "resting_hr_bpm": 52},
 		"sleep_stages": [{"stage": "deep", "duration_ms": 7200000}],
 		"workouts": [{
@@ -164,6 +166,9 @@ func TestHealthDayIngestAndRead(t *testing.T) {
 	}
 	if created.Day.LastSource != "health_connect" {
 		t.Fatalf("last_source = %q", created.Day.LastSource)
+	}
+	if created.Day.StepsSource == nil || *created.Day.StepsSource != "watch" {
+		t.Fatalf("steps_source = %v, want watch", created.Day.StepsSource)
 	}
 	if len(created.Day.SleepStages) != 1 || created.Day.SleepStages[0].Stage != "deep" {
 		t.Fatalf("sleep_stages = %+v", created.Day.SleepStages)
@@ -211,13 +216,32 @@ func TestHealthDayIngestAndRead(t *testing.T) {
 	}
 	requireErrorShape(t, response, "revision_conflict")
 
+	resync := strings.NewReplacer(
+		`"expected_revision": 0`, `"expected_revision": 1`,
+		`"steps": 0`, `"steps": 11000`,
+	).Replace(body)
+	status, response = postDay(t, baseURL, token, "resync-key", resync)
+	if status != http.StatusOK {
+		t.Fatalf("resync = %d %s, want 200", status, response)
+	}
+	resynced := decodeDay(t, response)
+	if resynced.Day.Revision != 2 || resynced.Day.Steps == nil || *resynced.Day.Steps != 11000 {
+		t.Fatalf("resync day = %+v, want revision 2 with 11000 steps", resynced.Day)
+	}
+	if resynced.Day.StepsSource == nil || *resynced.Day.StepsSource != "watch" {
+		t.Fatalf("resync steps_source = %v, want watch", resynced.Day.StepsSource)
+	}
+
 	status, response = request(t, baseURL+"/api/day/2026-10-25", token)
 	if status != http.StatusOK {
 		t.Fatalf("get day = %d %s, want 200", status, response)
 	}
 	stored := decodeDay(t, response)
-	if stored.Day.Revision != 1 || len(stored.Day.Workouts) != 1 || stored.Day.Workouts[0].ID != workout.ID {
-		t.Fatalf("stored day = %+v", stored.Day)
+	if stored.Day.Revision != 2 || stored.Day.Steps == nil || *stored.Day.Steps != 11000 {
+		t.Fatalf("stored day = %+v, want 11000 steps", stored.Day)
+	}
+	if len(stored.Day.Workouts) != 1 || stored.Day.Workouts[0].ID != workout.ID {
+		t.Fatalf("stored workouts = %+v", stored.Day.Workouts)
 	}
 
 	status, response = request(t, baseURL+"/api/day/2026-10-31", token)

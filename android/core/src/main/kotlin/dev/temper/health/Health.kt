@@ -54,6 +54,7 @@ data class StepsSample(
     val start: Instant,
     val end: Instant,
     val count: Long,
+    val origin: String = "other",
 )
 
 data class RestingHeartRateSample(
@@ -160,6 +161,7 @@ data class HealthDaySnapshot(
     val timezone: ZoneId,
     val sleepMs: Long? = null,
     val steps: Long? = null,
+    val stepsSource: String? = null,
     val restingHrBpm: Long? = null,
     val hrvRmssdMs: Double? = null,
     val sleepStages: List<SleepStageTotal> = emptyList(),

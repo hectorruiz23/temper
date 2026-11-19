@@ -111,6 +111,7 @@ var toolCatalog = []toolDefinition{
 			"timezone":          stringSchema("IANA timezone."),
 			"expected_revision": integerSchema("Revision the caller last saw."),
 			"source":            stringSchema("manual or health_connect."),
+			"steps_source":      stringSchema("Device origin of the step count: watch, fitness_band, ring, chest_strap, phone, smart_display, head_mounted, scale or other."),
 			"metrics": objectSchema(map[string]any{
 				"sleep_ms":       integerSchema("Sleep duration in milliseconds."),
 				"steps":          integerSchema("Step count."),
@@ -421,6 +422,7 @@ func (h *Handler) upsertDay(ctx context.Context, raw json.RawMessage) (toolResul
 		Timezone:         args.Timezone,
 		ExpectedRevision: args.ExpectedRevision,
 		Source:           args.Source,
+		StepsSource:      args.StepsSource,
 		IdempotencyKey:   args.IdempotencyKey,
 	}
 	if args.Metrics != nil {

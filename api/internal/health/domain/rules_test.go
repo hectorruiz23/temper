@@ -254,6 +254,10 @@ func TestValidateUpsertTopLevel(t *testing.T) {
 		{name: "missing timezone", mutate: func(upsert *Upsert) { upsert.Timezone = "" }, valid: false},
 		{name: "bad source", mutate: func(upsert *Upsert) { upsert.Source = "watch" }, valid: false},
 		{name: "negative expected revision", mutate: func(upsert *Upsert) { upsert.ExpectedRevision = -1 }, valid: false},
+		{name: "watch steps source", mutate: func(upsert *Upsert) { upsert.StepsSource = stringPtr("watch") }, valid: true},
+		{name: "phone steps source", mutate: func(upsert *Upsert) { upsert.StepsSource = stringPtr("phone") }, valid: true},
+		{name: "no steps source", mutate: func(upsert *Upsert) { upsert.StepsSource = nil }, valid: true},
+		{name: "unknown steps source", mutate: func(upsert *Upsert) { upsert.StepsSource = stringPtr("smartwatch") }, valid: false},
 	}
 
 	for _, test := range tests {

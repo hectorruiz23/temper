@@ -212,6 +212,7 @@ type upsertDayArgs struct {
 	Timezone         string         `json:"timezone"`
 	ExpectedRevision int64          `json:"expected_revision"`
 	Source           string         `json:"source"`
+	StepsSource      *string        `json:"steps_source"`
 	Metrics          *metricsArgs   `json:"metrics"`
 	SleepStages      *[]stageArgs   `json:"sleep_stages"`
 	Workouts         *[]workoutArgs `json:"workouts"`

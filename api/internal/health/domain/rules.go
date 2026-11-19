@@ -45,6 +45,9 @@ func ValidateUpsert(upsert Upsert) error {
 	if upsert.ExpectedRevision < 0 {
 		return invalid("expected_revision must not be negative")
 	}
+	if upsert.StepsSource != nil && !validStepsSource(*upsert.StepsSource) {
+		return invalid("steps_source must be one of %s", strings.Join(StepsSources, ", "))
+	}
 	if err := validateMetrics(upsert.Metrics); err != nil {
 		return err
 	}
@@ -75,6 +78,15 @@ func ApplyMetrics(day Day, patch MetricsPatch) Day {
 		day.HRVRMSSDMS = cloneFloat64(patch.HRVRMSSDMS.Value)
 	}
 	return day
+}
+
+func validStepsSource(value string) bool {
+	for _, candidate := range StepsSources {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
 }
 
 func validateMetrics(metrics MetricsPatch) error {

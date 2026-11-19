@@ -149,6 +149,7 @@ type dayResponse struct {
 	HRVRMSSDMS   *float64          `json:"hrv_rmssd_ms"`
 	UpdatedAt    int64             `json:"updated_at"`
 	LastSource   string            `json:"last_source"`
+	StepsSource  *string           `json:"steps_source"`
 	SleepStages  []stageResponse   `json:"sleep_stages"`
 	Workouts     []workoutResponse `json:"workouts"`
 }
@@ -244,6 +245,7 @@ func dayResponseFrom(day healthdomain.Day) dayResponse {
 		HRVRMSSDMS:   day.HRVRMSSDMS,
 		UpdatedAt:    day.UpdatedAt,
 		LastSource:   day.LastSource,
+		StepsSource:  day.StepsSource,
 		SleepStages:  stages,
 		Workouts:     workouts,
 	}

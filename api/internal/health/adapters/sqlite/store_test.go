@@ -187,6 +187,75 @@ func TestTwoDifferentSubmitsOnSameDate(t *testing.T) {
 	}
 }
 
+func TestStepsSourceAndStepsAreReplacedOnResync(t *testing.T) {
+	service, _, database := newTestService(t)
+	ctx := context.Background()
+
+	first := createCommand("key-1")
+	first.Metrics.Steps = domain.OptionalInt64{Set: true, Value: intPtr(24072)}
+	first.StepsSource = stringPtr("phone")
+	if _, err := service.UpsertDay(ctx, first); err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+
+	second := createCommand("key-2")
+	second.ExpectedRevision = 1
+	second.Source = domain.SourceHealthConnect
+	second.Metrics.Steps = domain.OptionalInt64{Set: true, Value: intPtr(11000)}
+	second.StepsSource = stringPtr("watch")
+	resynced, err := service.UpsertDay(ctx, second)
+	if err != nil {
+		t.Fatalf("resync: %v", err)
+	}
+	if resynced.Steps == nil || *resynced.Steps != 11000 {
+		t.Fatalf("steps after resync = %v, want 11000", resynced.Steps)
+	}
+	if resynced.StepsSource == nil || *resynced.StepsSource != "watch" {
+		t.Fatalf("steps_source after resync = %v, want watch", resynced.StepsSource)
+	}
+	if resynced.Revision != 2 {
+		t.Fatalf("revision after resync = %d, want 2", resynced.Revision)
+	}
+
+	third := createCommand("key-3")
+	third.ExpectedRevision = 2
+	third.Metrics.Steps = domain.OptionalInt64{Set: true, Value: intPtr(11000)}
+	third.StepsSource = stringPtr("watch")
+	unchanged, err := service.UpsertDay(ctx, third)
+	if err != nil {
+		t.Fatalf("second resync: %v", err)
+	}
+	if unchanged.Steps == nil || *unchanged.Steps != 11000 {
+		t.Fatalf("steps after the second resync = %v, want 11000", unchanged.Steps)
+	}
+
+	fourth := createCommand("key-4")
+	fourth.ExpectedRevision = 3
+	fourth.Date = first.Date
+	fourth.StepsSource = nil
+	fourth.Metrics.Steps = domain.OptionalInt64{}
+	fourth.Metrics.SleepMS = domain.OptionalInt64{Set: true, Value: intPtr(26000000)}
+	partial, err := service.UpsertDay(ctx, fourth)
+	if err != nil {
+		t.Fatalf("partial upsert: %v", err)
+	}
+	if partial.StepsSource == nil || *partial.StepsSource != "watch" {
+		t.Fatalf("steps_source after a partial upsert = %v, want watch", partial.StepsSource)
+	}
+	if partial.Steps == nil || *partial.Steps != 11000 {
+		t.Fatalf("steps after a partial upsert = %d, want 11000", *partial.Steps)
+	}
+
+	var steps int64
+	var source sql.NullString
+	if err := database.QueryRowContext(ctx, `SELECT steps, steps_source FROM day WHERE date = ?`, first.Date).Scan(&steps, &source); err != nil {
+		t.Fatalf("read stored day: %v", err)
+	}
+	if steps != 11000 || !source.Valid || source.String != "watch" {
+		t.Fatalf("stored steps and steps_source = %d/%v, want 11000/watch", steps, source)
+	}
+}
+
 func TestMetricsOmittedVersusExplicitNull(t *testing.T) {
 	service, _, _ := newTestService(t)
 	ctx := context.Background()

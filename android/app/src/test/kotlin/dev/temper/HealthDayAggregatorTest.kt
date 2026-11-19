@@ -473,4 +473,132 @@ class HealthDayAggregatorTest {
         assertTrue(body.contains("\"calories_kcal\":342.0"))
         assertTrue(body.contains("\"splits\":[{\"position\":0,\"kind\":\"segment\""))
     }
+
+    @Test
+    fun theWatchCountsTheStepsAndThePhoneIsIgnored() {
+        val day = LocalDate.of(2026, 11, 17)
+        val records = HealthRecords(
+            steps = listOf(
+                StepsSample(
+                    id = "phone-1",
+                    start = day.atTime(8, 0).atZone(zone).toInstant(),
+                    end = day.atTime(9, 0).atZone(zone).toInstant(),
+                    count = 5_000,
+                    origin = "phone",
+                ),
+                StepsSample(
+                    id = "watch-1",
+                    start = day.atTime(8, 0).atZone(zone).toInstant(),
+                    end = day.atTime(9, 0).atZone(zone).toInstant(),
+                    count = 4_800,
+                    origin = "watch",
+                ),
+            ),
+        )
+
+        val snapshot = HealthDayAggregator.aggregate(records, day, zone)
+
+        assertEquals(4_800L, snapshot.steps)
+        assertEquals("watch", snapshot.stepsSource)
+    }
+
+    @Test
+    fun thePhoneCountsWhenNoOtherDeviceReports() {
+        val day = LocalDate.of(2026, 11, 17)
+        val records = HealthRecords(
+            steps = listOf(
+                StepsSample(
+                    id = "phone-1",
+                    start = day.atTime(8, 0).atZone(zone).toInstant(),
+                    end = day.atTime(9, 0).atZone(zone).toInstant(),
+                    count = 3_200,
+                    origin = "phone",
+                ),
+            ),
+        )
+
+        val snapshot = HealthDayAggregator.aggregate(records, day, zone)
+
+        assertEquals(3_200L, snapshot.steps)
+        assertEquals("phone", snapshot.stepsSource)
+    }
+
+    @Test
+    fun resyncingTheSameDayKeepsTheSameCount() {
+        val day = LocalDate.of(2026, 11, 17)
+        val first = HealthRecords(
+            steps = listOf(
+                StepsSample(
+                    id = "phone-1",
+                    start = day.atTime(8, 0).atZone(zone).toInstant(),
+                    end = day.atTime(9, 0).atZone(zone).toInstant(),
+                    count = 5_000,
+                    origin = "phone",
+                ),
+                StepsSample(
+                    id = "watch-1",
+                    start = day.atTime(8, 0).atZone(zone).toInstant(),
+                    end = day.atTime(9, 0).atZone(zone).toInstant(),
+                    count = 4_800,
+                    origin = "watch",
+                ),
+            ),
+        )
+        val resync = HealthRecords(
+            steps = listOf(
+                StepsSample(
+                    id = "phone-2",
+                    start = day.atTime(8, 0).atZone(zone).toInstant(),
+                    end = day.atTime(9, 0).atZone(zone).toInstant(),
+                    count = 5_000,
+                    origin = "phone",
+                ),
+                StepsSample(
+                    id = "watch-2",
+                    start = day.atTime(8, 0).atZone(zone).toInstant(),
+                    end = day.atTime(9, 0).atZone(zone).toInstant(),
+                    count = 4_800,
+                    origin = "watch",
+                ),
+            ),
+        )
+
+        val firstSnapshot = HealthDayAggregator.aggregate(first, day, zone)
+        val resyncSnapshot = HealthDayAggregator.aggregate(resync, day, zone)
+
+        assertEquals(firstSnapshot.steps, resyncSnapshot.steps)
+        assertEquals(4_800L, resyncSnapshot.steps)
+        assertEquals(firstSnapshot.stepsSource, resyncSnapshot.stepsSource)
+    }
+
+    @Test
+    fun aDayWithoutStepsKeepsTheCountAndSourceAbsent() {
+        val day = LocalDate.of(2026, 11, 17)
+        val snapshot = HealthDayAggregator.aggregate(HealthRecords(), day, zone)
+
+        assertNull(snapshot.steps)
+        assertNull(snapshot.stepsSource)
+    }
+
+    @Test
+    fun theStepsSourceIsSentOnlyWhenKnown() {
+        val withSource = DayUploadRequest(
+            date = "2026-11-17",
+            timezone = "Europe/Madrid",
+            expectedRevision = 1,
+            source = "health_connect",
+            stepsSource = "watch",
+            metrics = DayMetrics(steps = 11_000),
+        )
+        val withoutSource = DayUploadRequest(
+            date = "2026-11-17",
+            timezone = "Europe/Madrid",
+            expectedRevision = 1,
+            source = "health_connect",
+            metrics = DayMetrics(sleepMs = 25_200_000),
+        )
+
+        assertTrue(TemperJson.encodeToString(withSource).contains("\"steps_source\":\"watch\""))
+        assertFalse(TemperJson.encodeToString(withoutSource).contains("steps_source"))
+    }
 }
